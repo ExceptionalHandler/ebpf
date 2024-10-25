@@ -437,8 +437,8 @@ func (pi *ProgramInfo) Instructions() (asm.Instructions, error) {
 	}
 
 	r := bytes.NewReader(pi.insns)
-	var insns asm.Instructions
-	if err := insns.Unmarshal(r, internal.NativeEndian); err != nil {
+	insns, err := asm.AppendInstructions(nil, r, internal.NativeEndian, internal.NativePlatform)
+	if err != nil {
 		return nil, fmt.Errorf("unmarshaling instructions: %w", err)
 	}
 
