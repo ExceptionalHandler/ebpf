@@ -112,9 +112,9 @@ sudo virt-install \
   --channel type=unix,source.mode=bind,target.type=virtio,target.name=org.qemu.guest_agent.0 \
   --graphics spice \
   --disk path="$VM_DISK",format=qcow2,bus=virtio,size="$DISK_SIZE",boot.order=1 \
-  --disk path="$temp/win.iso",device=cdrom,bus=sata,boot.order=2 \
   --disk path="$VIRTIO_ISO",device=cdrom,bus=sata \
-  --boot uefi,firmware.feature0.name=secure-boot,firmware.feature0.enabled=no \
+  --cdrom "$temp/win.iso" \
+  --boot uefi,firmware.feature0.name=enrolled-keys,firmware.feature0.enabled=no \
   --noautoconsole # \
   # --features hyperv.synic.state=on \
   # --xml ./features/hyperv/vpindex/@state=on \
@@ -126,7 +126,7 @@ virt-manager --connect qemu:///system --show-domain-console "$VM_NAME"
 echo "Waiting for VM to receive an IP."
 ip=""
 while [ -z "$ip" ]; do
-  ip="$(virsh domifaddr "$VM_NAME" | gawk 'match($0, /([[:digit:]\.]+)\//, a) { print a[1] }')"
+  ip="$(sudo virsh domifaddr "$VM_NAME" | gawk 'match($0, /([[:digit:]\.]+)\//, a) { print a[1] }')"
   sleep 10
   echo -n .
 done
