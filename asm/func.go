@@ -15,6 +15,7 @@ func (BuiltinFunc) Max() BuiltinFunc {
 	if runtime.GOOS == "windows" {
 		return 0
 	}
+<<<<<<< HEAD
 	return maxLinuxBuiltinFunc - 1
 }
 
@@ -249,6 +250,18 @@ const (
 
 	maxLinuxBuiltinFunc
 )
+=======
+	return FnCgrpStorageDelete
+}
+
+func BuiltinFuncForPlatform(p internal.Platform, value uint32) (BuiltinFunc, error) {
+	return internal.EncodePlatformConstant[BuiltinFunc](p, value)
+}
+
+func (fn BuiltinFunc) Decode() (internal.Platform, uint32) {
+	return internal.DecodePlatformConstant(fn)
+}
+>>>>>>> origin/windows
 
 func BuiltinFuncForPlatform(p internal.Platform, value uint32) (BuiltinFunc, error) {
 	return internal.EncodePlatformConstant[BuiltinFunc](p, value)

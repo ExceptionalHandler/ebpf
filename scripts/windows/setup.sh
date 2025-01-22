@@ -113,7 +113,11 @@ sudo virt-install \
   --graphics spice \
   --disk path="$VM_DISK",format=qcow2,bus=virtio,size="$DISK_SIZE",boot.order=1 \
   --disk path="$VIRTIO_ISO",device=cdrom,bus=sata \
+<<<<<<< HEAD
   --cdrom "$temp/win.iso" \
+=======
+  --install bootdev=cdrom \
+>>>>>>> origin/windows
   --boot uefi,firmware.feature0.name=enrolled-keys,firmware.feature0.enabled=no \
   --noautoconsole # \
   # --features hyperv.synic.state=on \
