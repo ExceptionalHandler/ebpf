@@ -35,8 +35,8 @@ func (fd *FD) Close() error {
 	if fd.raw == invalidFd {
 		return nil
 	}
-
-	return efw.EbpfCloseFd(fd.disown())
+	return nil
+	//return efw.EbpfCloseFd(fd.disown())
 }
 
 func (fd *FD) Dup() (*FD, error) {

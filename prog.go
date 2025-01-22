@@ -325,14 +325,15 @@ func newProgramWithOptions(spec *ProgramSpec, opts ProgramOptions) (*Program, er
 		if err != nil {
 			return nil, fmt.Errorf("marshal ext_infos: %w", err)
 		}
+		if runtime.GOOS != "windows" {
+			attr.FuncInfoRecSize = btf.FuncInfoSize
+			attr.FuncInfoCnt = uint32(len(fib)) / btf.FuncInfoSize
+			attr.FuncInfo = sys.NewSlicePointer(fib)
 
-		attr.FuncInfoRecSize = btf.FuncInfoSize
-		attr.FuncInfoCnt = uint32(len(fib)) / btf.FuncInfoSize
-		attr.FuncInfo = sys.NewSlicePointer(fib)
-
-		attr.LineInfoRecSize = btf.LineInfoSize
-		attr.LineInfoCnt = uint32(len(lib)) / btf.LineInfoSize
-		attr.LineInfo = sys.NewSlicePointer(lib)
+			attr.LineInfoRecSize = btf.LineInfoSize
+			attr.LineInfoCnt = uint32(len(lib)) / btf.LineInfoSize
+			attr.LineInfo = sys.NewSlicePointer(lib)
+		}
 	}
 
 	if !b.Empty() {
@@ -364,10 +365,11 @@ func newProgramWithOptions(spec *ProgramSpec, opts ProgramOptions) (*Program, er
 		return nil, fmt.Errorf("fixing up kfuncs: %w", err)
 	}
 	defer handles.Close()
-
-	if len(handles) > 0 {
-		fdArray := handles.fdArray()
-		attr.FdArray = sys.NewPointer(unsafe.Pointer(&fdArray[0]))
+	if runtime.GOOS != "windows" {
+		if len(handles) > 0 {
+			fdArray := handles.fdArray()
+			attr.FdArray = sys.NewPointer(unsafe.Pointer(&fdArray[0]))
+		}
 	}
 
 	buf := bytes.NewBuffer(make([]byte, 0, insns.Size()))
@@ -416,6 +418,22 @@ func newProgramWithOptions(spec *ProgramSpec, opts ProgramOptions) (*Program, er
 
 	for {
 		var fd *sys.FD
+
+		if runtime.GOOS == "windows" {
+			attr.ProgIfindex = 0
+			attr.ExpectedAttachType = 0
+			attr.ProgBtfFd = 0
+			attr.FuncInfoRecSize = 0
+			attr.FuncInfoCnt = 0
+			attr.AttachBtfId = 0
+			attr.LineInfoRecSize = 0
+			attr.LineInfoCnt = 0
+			attr.AttachBtfObjFd = 0
+			attr.CoreReloCnt = 0
+			attr.CoreReloRecSize = 0
+			attr.LogTrueSize = 0
+		}
+
 		fd, err = sys.ProgLoad(attr)
 		if err == nil {
 			return &Program{sys.ByteSliceToString(logBuf), fd, spec.Name, "", spec.Type}, nil

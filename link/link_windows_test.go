@@ -1,6 +1,7 @@
 package link
 
 import (
+	"fmt"
 	"os/exec"
 	"testing"
 
@@ -84,4 +85,31 @@ func TestProcessLink(t *testing.T) {
 	qt.Assert(t, qt.Equals(value, 1), qt.Commentf("Executing a program should trigger the program"))
 
 	qt.Assert(t, qt.IsNil(link.Close()))
+}
+
+func TestExec(t *testing.T) {
+
+	spec, err := ebpf.LoadCollectionSpec("C:\\git\\ebpf\\examples\\ringbuffer_windows\\process_monitor.o")
+	qt.Assert(t, qt.IsNil(err))
+
+	for name, m := range spec.Maps {
+		fmt.Println(m.Type, name)
+	}
+
+	for name, p := range spec.Programs {
+		fmt.Println(name, p.Type, p.SectionName)
+	}
+	var progSpec = spec.Programs["ProcessMonitor"]
+	progSpec.Type = ebpf.WindowsProcess
+	fmt.Println(progSpec.Instructions)
+	prog, err := ebpf.NewProgram(progSpec)
+	qt.Assert(t, qt.IsNil(err))
+	defer prog.Close()
+
+	link, err := AttachRawLink(RawLinkOptions{
+		Program: prog,
+		Attach:  ebpf.AttachWindowsProcess,
+	})
+	qt.Assert(t, qt.IsNil(err))
+	defer link.Close()
 }
