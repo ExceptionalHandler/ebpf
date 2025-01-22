@@ -101,7 +101,7 @@ func TestLoadCollectionSpec(t *testing.T) {
 				Name:       SanitizeName(".bss", -1),
 				Type:       Array,
 				KeySize:    4,
-				ValueSize:  8,
+				ValueSize:  4,
 				MaxEntries: 1,
 			},
 			".data": {
@@ -116,20 +116,6 @@ func TestLoadCollectionSpec(t *testing.T) {
 				Type:       Array,
 				KeySize:    4,
 				ValueSize:  4,
-				MaxEntries: 1,
-			},
-			".data.weak": {
-				Name:       SanitizeName(".data.weak", -1),
-				Type:       Array,
-				KeySize:    4,
-				ValueSize:  4,
-				MaxEntries: 1,
-			},
-			".data.struct": {
-				Name:       SanitizeName(".data.struct", -1),
-				Type:       Array,
-				KeySize:    4,
-				ValueSize:  16,
 				MaxEntries: 1,
 			},
 			".rodata": {
@@ -200,24 +186,16 @@ func TestLoadCollectionSpec(t *testing.T) {
 				SectionName: "socket/4",
 				License:     "MIT",
 			},
-			"set_vars": {
-				Name:        "set_vars",
-				Type:        SocketFilter,
-				SectionName: "socket",
-				License:     "MIT",
-			},
 		},
 		Variables: map[string]*VariableSpec{
-			"arg":        {name: "arg", offset: 4, size: 4},
-			"arg2":       {name: "arg2", offset: 0, size: 4},
-			"arg3":       {name: "arg3", offset: 0, size: 4},
-			"key1":       {name: "key1", offset: 0, size: 4},
-			"key2":       {name: "key2", offset: 0, size: 4},
-			"key3":       {name: "key3", offset: 0, size: 4},
-			"neg":        {name: "neg", offset: 12, size: 4},
-			"struct_var": {name: "struct_var", offset: 0, size: 16},
-			"uneg":       {name: "uneg", offset: 8, size: 4},
-			"weak":       {name: "weak", offset: 0, size: 4},
+			"arg":  {name: "arg", offset: 4, size: 4},
+			"arg2": {name: "arg2", offset: 0, size: 4},
+			"arg3": {name: "arg3", offset: 0, size: 4},
+			"key1": {name: "key1", offset: 0, size: 4},
+			"key2": {name: "key2", offset: 0, size: 4},
+			"key3": {name: "key3", offset: 0, size: 4},
+			"neg":  {name: "neg", offset: 12, size: 4},
+			"uneg": {name: "uneg", offset: 8, size: 4},
 		},
 		Platform: Linux,
 	}
@@ -669,7 +647,7 @@ func TestTailCall(t *testing.T) {
 	}
 }
 
-func TestKconfigSyscallWrapper(t *testing.T) {
+func TestKconfig(t *testing.T) {
 	file := testutils.NativeFile(t, "testdata/kconfig-%s.elf")
 	spec, err := LoadCollectionSpec(file)
 	if err != nil {
@@ -677,7 +655,7 @@ func TestKconfigSyscallWrapper(t *testing.T) {
 	}
 
 	var obj struct {
-		Main *Program `ebpf:"syscall_wrapper"`
+		Main *Program `ebpf:"kconfig"`
 	}
 
 	err = spec.LoadAndAssign(&obj, nil)
@@ -693,52 +671,7 @@ func TestKconfigSyscallWrapper(t *testing.T) {
 		t.Fatal(err)
 	}
 
-	var expected uint32
-	if testutils.IsKernelLessThan(t, "4.17") {
-		expected = 0
-	} else {
-		expected = 1
-	}
-
-	if ret != expected {
-		t.Fatalf("Expected eBPF to return value %d, got %d", expected, ret)
-	}
-}
-
-func TestKconfigConfig(t *testing.T) {
-	file := testutils.NativeFile(t, "testdata/kconfig_config-%s.elf")
-	spec, err := LoadCollectionSpec(file)
-	if err != nil {
-		t.Fatal(err)
-	}
-
-	var obj struct {
-		Main     *Program `ebpf:"kconfig"`
-		ArrayMap *Map     `ebpf:"array_map"`
-	}
-
-	err = spec.LoadAndAssign(&obj, nil)
-	testutils.SkipIfNotSupported(t, err)
-	if err != nil {
-		t.Fatal(err)
-	}
-	defer obj.Main.Close()
-	defer obj.ArrayMap.Close()
-
-	_, _, err = obj.Main.Test(internal.EmptyBPFContext)
-	testutils.SkipIfNotSupported(t, err)
-	if err != nil {
-		t.Fatal(err)
-	}
-
-	var value uint64
-	err = obj.ArrayMap.Lookup(uint32(0), &value)
-	if err != nil {
-		t.Fatal(err)
-	}
-
-	// CONFIG_HZ must have a value.
-	qt.Assert(t, qt.Not(qt.Equals(value, 0)))
+	qt.Assert(t, qt.Equals(ret, 0), qt.Commentf("Failed assertion at line %d in testdata/kconfig.c", ret))
 }
 
 func TestKsym(t *testing.T) {
