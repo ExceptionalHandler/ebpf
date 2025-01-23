@@ -24,11 +24,7 @@ func AttachRawLink(opts RawLinkOptions) (*RawLink, error) {
 		return nil, fmt.Errorf("get attach type: %w", err)
 	}
 
-<<<<<<< HEAD
-	raw, err := efw.EbpfProgramAttachByFd(opts.Program.FD(), &attachTypeGUID)
-=======
 	raw, err := efw.EbpfProgramAttachAsFd(opts.Program.FD(), &attachTypeGUID)
->>>>>>> origin/windows
 	if err != nil {
 		return nil, fmt.Errorf("attach link: %w", err)
 	}

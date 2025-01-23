@@ -1,10 +1,7 @@
 package link
 
 import (
-<<<<<<< HEAD
-=======
 	"errors"
->>>>>>> origin/windows
 	"os/exec"
 	"testing"
 
@@ -12,10 +9,7 @@ import (
 
 	"github.com/cilium/ebpf"
 	"github.com/cilium/ebpf/asm"
-<<<<<<< HEAD
-=======
 	"github.com/cilium/ebpf/internal/errno"
->>>>>>> origin/windows
 )
 
 func testLinkArch(t *testing.T, link Link) {
@@ -47,10 +41,7 @@ func newRawLink(t *testing.T) (*RawLink, *ebpf.Program) {
 func TestProcessLink(t *testing.T) {
 	array, err := ebpf.NewMap(&ebpf.MapSpec{
 		Type:       ebpf.WindowsArray,
-<<<<<<< HEAD
-=======
 		Name:       "process_state",
->>>>>>> origin/windows
 		KeySize:    4,
 		ValueSize:  4,
 		MaxEntries: 1,
@@ -60,10 +51,7 @@ func TestProcessLink(t *testing.T) {
 
 	prog, err := ebpf.NewProgram(&ebpf.ProgramSpec{
 		Type: ebpf.WindowsProcess,
-<<<<<<< HEAD
-=======
 		Name: "process_test",
->>>>>>> origin/windows
 		Instructions: asm.Instructions{
 			// R1 = map
 			asm.LoadMapPtr(asm.R1, array.FD()),
@@ -78,22 +66,15 @@ func TestProcessLink(t *testing.T) {
 			// R4 = flags
 			asm.Mov.Imm(asm.R4, 0),
 			// bpf_map_update_elem(map, key, value, flags)
-<<<<<<< HEAD
-			asm.FnMapUpdateElem.Call(),
-=======
 			asm.WindowsFnMapUpdateElem.Call(),
 			asm.Mov.Imm(asm.R0, 0),
->>>>>>> origin/windows
 			asm.Return(),
 		},
 		License: "MIT",
 	})
-<<<<<<< HEAD
-=======
 	if errors.Is(err, errno.EINVAL) {
 		t.Logf("Got %s: check that ntosebpfext is installed", err)
 	}
->>>>>>> origin/windows
 	qt.Assert(t, qt.IsNil(err))
 	defer prog.Close()
 
@@ -108,11 +89,7 @@ func TestProcessLink(t *testing.T) {
 
 	var value uint32
 	qt.Assert(t, qt.IsNil(array.Lookup(uint32(0), &value)))
-<<<<<<< HEAD
-	qt.Assert(t, qt.Equals(value, 1), qt.Commentf("Executing a program should trigger the program"))
-=======
 	qt.Assert(t, qt.Equals(value, 1), qt.Commentf("Executing a binary should trigger the program"))
->>>>>>> origin/windows
 
 	qt.Assert(t, qt.IsNil(link.Close()))
 }

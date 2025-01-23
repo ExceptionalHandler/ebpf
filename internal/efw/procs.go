@@ -72,19 +72,6 @@ func EbpfObjectLoadNativeFds(fileName string, mapFds []FD, programFds []FD) (int
 // int bpf(int cmd, union bpf_attr* attr, unsigned int size)
 var BPF = newProc("bpf")
 
-<<<<<<< HEAD
-// ebpf_result_t ebpf_program_attach_by_fd(
-// fd_t program_fd,
-// _In_opt_ const ebpf_attach_type_t* attach_type,
-// _In_reads_bytes_opt_(attach_parameters_size) void* attach_parameters,
-// size_t attach_parameters_size,
-// _Outptr_ struct bpf_link** link)
-var ebpfProgramAttachByFdProc = newProc("ebpf_program_attach_by_fd")
-
-func EbpfProgramAttachByFd(fd int, attachType *windows.GUID) (int, error) {
-	var link uintptr
-	err := ebpfProgramAttachByFdProc.CallResult(
-=======
 /*
 Attach a program.
 
@@ -100,29 +87,13 @@ var ebpfProgramAttachAsFdProc = newProc("ebpf_program_attach_as_fd")
 func EbpfProgramAttachAsFd(fd int, attachType *windows.GUID) (int, error) {
 	var link FD
 	err := ebpfProgramAttachAsFdProc.CallResult(
->>>>>>> origin/windows
 		uintptr(fd),
 		uintptr(unsafe.Pointer(attachType)),
 		0, // attach_parameters
 		0, // attach_parameters_size
 		uintptr(unsafe.Pointer(&link)),
 	)
-<<<<<<< HEAD
-	if err != nil {
-		return -1, err
-	}
-
-	return EbpfLinkFd(link)
-}
-
-// fd_t ebpf_link_fd(_Frees_ptr_ struct bpf_link* link)
-var ebpfLinkFdProc = newProc("ebpf_link_free")
-
-func EbpfLinkFd(link uintptr) (int, error) {
-	return ebpfLinkFdProc.CallFd(link)
-=======
 	return int(link), err
->>>>>>> origin/windows
 }
 
 // const ebpf_attach_type_t* ebpf_get_ebpf_attach_type(bpf_attach_type_t bpf_attach_type)
