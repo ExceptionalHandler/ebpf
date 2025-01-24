@@ -647,7 +647,7 @@ func TestTailCall(t *testing.T) {
 	}
 }
 
-func TestKconfig(t *testing.T) {
+func TestKconfigSyscallWrapper(t *testing.T) {
 	file := testutils.NativeFile(t, "testdata/kconfig-%s.elf")
 	spec, err := LoadCollectionSpec(file)
 	if err != nil {
@@ -655,7 +655,7 @@ func TestKconfig(t *testing.T) {
 	}
 
 	var obj struct {
-		Main *Program `ebpf:"kconfig"`
+		Main *Program `ebpf:"syscall_wrapper"`
 	}
 
 	err = spec.LoadAndAssign(&obj, nil)

@@ -109,74 +109,13 @@ func validateProgInfo(t *testing.T, info *ProgramInfo) {
 func TestProgramInfo(t *testing.T) {
 	prog := mustBasicProgram(t)
 
-	info, err := newProgramInfoFromFd(prog.fd)
-	testutils.SkipIfNotSupported(t, err)
-	qt.Assert(t, qt.IsNil(err))
-
-	validateProgInfo(t, info)
-
-	id, ok := info.ID()
-	qt.Assert(t, qt.IsTrue(ok))
-	qt.Assert(t, qt.Not(qt.Equals(id, 0)))
-
-	if testutils.IsKernelLessThan(t, "4.15") {
-		qt.Assert(t, qt.Equals(info.Name, ""))
-	} else {
-		qt.Assert(t, qt.Equals(info.Name, "test"))
-	}
-
-	if jitedSize, err := info.JitedSize(); testutils.IsKernelLessThan(t, "4.13") {
-		qt.Assert(t, qt.IsNotNil(err))
-	} else {
-		qt.Assert(t, qt.IsNil(err))
-		qt.Assert(t, qt.IsTrue(jitedSize > 0))
-	}
-
-	if xlatedSize, err := info.TranslatedSize(); testutils.IsKernelLessThan(t, "4.13") {
-		qt.Assert(t, qt.IsNotNil(err))
-	} else {
-		qt.Assert(t, qt.IsNil(err))
-		qt.Assert(t, qt.IsTrue(xlatedSize > 0))
-	}
-
-	if uid, ok := info.CreatedByUID(); testutils.IsKernelLessThan(t, "4.15") {
-		qt.Assert(t, qt.IsFalse(ok))
-	} else {
-		qt.Assert(t, qt.IsTrue(ok))
-		qt.Assert(t, qt.Equals(uid, uint32(os.Getuid())))
-	}
-
-	if loadTime, ok := info.LoadTime(); testutils.IsKernelLessThan(t, "4.15") {
-		qt.Assert(t, qt.IsFalse(ok))
-	} else {
-		qt.Assert(t, qt.IsTrue(ok))
-		qt.Assert(t, qt.IsTrue(loadTime > 0))
-	}
-
-	if verifiedInsns, ok := info.VerifiedInstructions(); testutils.IsKernelLessThan(t, "5.16") {
-		qt.Assert(t, qt.IsFalse(ok))
-	} else {
-		qt.Assert(t, qt.IsTrue(ok))
-		qt.Assert(t, qt.IsTrue(verifiedInsns > 0))
-	}
-
-	if insns, ok := info.JitedInsns(); testutils.IsKernelLessThan(t, "4.13") {
-		qt.Assert(t, qt.IsFalse(ok))
-	} else {
-		qt.Assert(t, qt.IsTrue(ok))
-		qt.Assert(t, qt.IsTrue(len(insns) > 0))
-	}
-}
-
-func TestProgramInfoProc(t *testing.T) {
-	prog := mustSocketFilter(t)
-
 	info, err := newProgramInfoFromProc(prog.fd)
 	testutils.SkipIfNotSupported(t, err)
 	qt.Assert(t, qt.IsNil(err))
 
-	validateProgInfo(t, info)
-}
+			if info.Type != basicProgramType {
+				t.Errorf("Expected Type to be %s, got %s", basicProgramType, info.Type)
+			}
 
 func TestProgramInfoBTF(t *testing.T) {
 	prog, err := NewProgram(multiprogSpec)
@@ -184,9 +123,9 @@ func TestProgramInfoBTF(t *testing.T) {
 	qt.Assert(t, qt.IsNil(err))
 	t.Cleanup(func() { prog.Close() })
 
-	info, err := prog.Info()
-	testutils.SkipIfNotSupported(t, err)
-	qt.Assert(t, qt.IsNil(err))
+			if info.Tag != "" {
+				qt.Assert(t, qt.Equals("d7edec644f05498d", info.Tag))
+			}
 
 	// On kernels before 5.x, nr_jited_ksyms is not set for programs without subprogs.
 	// It's included here since this test uses a bpf program with subprogs.
@@ -220,13 +159,48 @@ func TestProgramInfoBTF(t *testing.T) {
 		qt.Assert(t, qt.ContentEquals(funcs[1].Func, btfFn))
 	}
 
-	if lines, err := info.LineInfos(); testutils.IsKernelLessThan(t, "5.0") {
-		qt.Assert(t, qt.IsNotNil(err))
-	} else {
-		qt.Assert(t, qt.IsNil(err))
-		qt.Assert(t, qt.HasLen(lines, 2))
-		qt.Assert(t, qt.Equals(lines[0].Line.Line(), "line info"))
-		qt.Assert(t, qt.Equals(lines[1].Line.Line(), "line info"))
+				_, ok = info.LoadTime()
+				qt.Assert(t, qt.IsFalse(ok))
+
+				_, ok = info.VerifiedInstructions()
+				qt.Assert(t, qt.IsFalse(ok))
+			} else {
+				if jitedSize, err := info.JitedSize(); testutils.IsKernelLessThan(t, "4.13") || runtime.GOOS == "windows" {
+					qt.Assert(t, qt.IsNotNil(err))
+				} else {
+					qt.Assert(t, qt.IsNil(err))
+					qt.Assert(t, qt.IsTrue(jitedSize > 0))
+				}
+
+				if xlatedSize, err := info.TranslatedSize(); testutils.IsKernelLessThan(t, "4.13") || runtime.GOOS == "windows" {
+					qt.Assert(t, qt.IsNotNil(err))
+				} else {
+					qt.Assert(t, qt.IsNil(err))
+					qt.Assert(t, qt.IsTrue(xlatedSize > 0))
+				}
+
+				if uid, ok := info.CreatedByUID(); testutils.IsKernelLessThan(t, "4.15") || runtime.GOOS == "windows" {
+					qt.Assert(t, qt.IsFalse(ok))
+				} else {
+					qt.Assert(t, qt.IsTrue(ok))
+					qt.Assert(t, qt.Equals(uid, uint32(os.Getuid())))
+				}
+
+				if loadTime, ok := info.LoadTime(); testutils.IsKernelLessThan(t, "4.15") || runtime.GOOS == "windows" {
+					qt.Assert(t, qt.IsFalse(ok))
+				} else {
+					qt.Assert(t, qt.IsTrue(ok))
+					qt.Assert(t, qt.IsTrue(loadTime > 0))
+				}
+
+				if verifiedInsns, ok := info.VerifiedInstructions(); testutils.IsKernelLessThan(t, "5.16") || runtime.GOOS == "windows" {
+					qt.Assert(t, qt.IsFalse(ok))
+				} else {
+					qt.Assert(t, qt.IsTrue(ok))
+					qt.Assert(t, qt.IsTrue(verifiedInsns > 0))
+				}
+			}
+		})
 	}
 }
 

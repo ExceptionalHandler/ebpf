@@ -90,7 +90,7 @@ func TestProcessLink(t *testing.T) {
 
 	var value uint32
 	qt.Assert(t, qt.IsNil(array.Lookup(uint32(0), &value)))
-	qt.Assert(t, qt.Equals(value, 1), qt.Commentf("Executing a binary should trigger the program"))
+	qt.Assert(t, qt.Equals(value, 1), qt.Commentf("Executing a program should trigger the program"))
 
 	qt.Assert(t, qt.IsNil(link.Close()))
 }

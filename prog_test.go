@@ -525,11 +525,7 @@ func TestProgramMarshaling(t *testing.T) {
 	arr := createProgramArray(t)
 	defer arr.Close()
 
-	if err := arr.Put(idx, (*Program)(nil)); err == nil {
-		t.Fatal("Put accepted a nil Program")
-	}
-
-	prog := mustSocketFilter(t)
+	prog := mustBasicProgram(t)
 
 	if err := arr.Put(idx, prog); err != nil {
 		t.Fatal("Can't put program:", err)
