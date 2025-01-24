@@ -18,20 +18,12 @@ func (BuiltinFunc) Max() BuiltinFunc {
 	return FnCgrpStorageDelete
 }
 
-func BuiltinFuncForPlatform(p internal.Platform, value uint32) (BuiltinFunc, error) {
-	return internal.EncodePlatformConstant[BuiltinFunc](p, value)
-}
-
 func (fn BuiltinFunc) Decode() (internal.Platform, uint32) {
 	return internal.DecodePlatformConstant(fn)
 }
 
 func BuiltinFuncForPlatform(p internal.Platform, value uint32) (BuiltinFunc, error) {
 	return internal.EncodePlatformConstant[BuiltinFunc](p, value)
-}
-
-func (fn BuiltinFunc) Decode() (internal.Platform, uint32) {
-	return internal.DecodePlatformConstant(fn)
 }
 
 // Call emits a function call.

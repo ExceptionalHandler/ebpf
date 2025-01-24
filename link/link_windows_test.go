@@ -97,7 +97,7 @@ func TestProcessLink(t *testing.T) {
 
 func TestExec(t *testing.T) {
 
-	spec, err := ebpf.LoadCollectionSpec("C:\\git\\ebpf\\examples\\ringbuffer_windows\\process_monitor.o")
+	spec, err := ebpf.LoadCollectionSpec("C:\\git\ntosebpfext\\x64\\Debug\\process_monitor_km\\process_monitor.o")
 	qt.Assert(t, qt.IsNil(err))
 
 	for name, m := range spec.Maps {
