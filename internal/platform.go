@@ -14,6 +14,11 @@ const (
 )
 
 const (
+	LinuxTag   = uint32(Linux-1) << PlatformShift
+	WindowsTag = uint32(Windows-1) << PlatformShift
+)
+
+const (
 	PlatformMax   = 0xf
 	PlatformShift = 24
 	PlatformMask  = PlatformMax << PlatformShift

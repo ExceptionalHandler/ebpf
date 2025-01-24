@@ -647,7 +647,7 @@ func TestTailCall(t *testing.T) {
 	}
 }
 
-func TestKconfig(t *testing.T) {
+func TestKconfigSyscallWrapper(t *testing.T) {
 	file := testutils.NativeFile(t, "testdata/kconfig-%s.elf")
 	spec, err := LoadCollectionSpec(file)
 	if err != nil {
@@ -655,7 +655,7 @@ func TestKconfig(t *testing.T) {
 	}
 
 	var obj struct {
-		Main *Program `ebpf:"kconfig"`
+		Main *Program `ebpf:"syscall_wrapper"`
 	}
 
 	err = spec.LoadAndAssign(&obj, nil)
@@ -1367,13 +1367,15 @@ func TestWindowsELFCompat(t *testing.T) {
 			t.Skip("Uses unsupported inner_map_id")
 		case "map_in_map_legacy_idx.o":
 			t.Skip("Uses unsupported inner_map_idx")
+		case "atomic_instruction_others.o":
+			t.Skip("Doesn't contain .ebpf_for_windows section")
 		}
 
 		f, err := os.Open(file)
 		qt.Assert(t, qt.IsNil(err))
 		defer f.Close()
 
-		coll, err := LoadPlatformCollectionSpecFromReader(f, Windows)
+		coll, err := LoadCollectionSpecFromReader(f)
 		qt.Assert(t, qt.IsNil(err))
 
 		qt.Assert(t, qt.IsFalse(len(coll.Maps)+len(coll.Programs) == 0), qt.Commentf("ELF should not be completely empty"))

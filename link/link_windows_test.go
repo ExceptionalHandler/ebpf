@@ -1,7 +1,7 @@
 package link
 
 import (
-	"fmt"
+	"errors"
 	"os/exec"
 	"testing"
 
@@ -9,6 +9,7 @@ import (
 
 	"github.com/cilium/ebpf"
 	"github.com/cilium/ebpf/asm"
+	"github.com/cilium/ebpf/internal/errno"
 )
 
 func testLinkArch(t *testing.T, link Link) {
@@ -40,6 +41,7 @@ func newRawLink(t *testing.T) (*RawLink, *ebpf.Program) {
 func TestProcessLink(t *testing.T) {
 	array, err := ebpf.NewMap(&ebpf.MapSpec{
 		Type:       ebpf.WindowsArray,
+		Name:       "process_state",
 		KeySize:    4,
 		ValueSize:  4,
 		MaxEntries: 1,
@@ -49,6 +51,7 @@ func TestProcessLink(t *testing.T) {
 
 	prog, err := ebpf.NewProgram(&ebpf.ProgramSpec{
 		Type: ebpf.WindowsProcess,
+		Name: "process_test",
 		Instructions: asm.Instructions{
 			// R1 = map
 			asm.LoadMapPtr(asm.R1, array.FD()),
@@ -63,11 +66,15 @@ func TestProcessLink(t *testing.T) {
 			// R4 = flags
 			asm.Mov.Imm(asm.R4, 0),
 			// bpf_map_update_elem(map, key, value, flags)
-			asm.FnMapUpdateElem.Call(),
+			asm.WindowsFnMapUpdateElem.Call(),
+			asm.Mov.Imm(asm.R0, 0),
 			asm.Return(),
 		},
 		License: "MIT",
 	})
+	if errors.Is(err, errno.EINVAL) {
+		t.Logf("Got %s: check that ntosebpfext is installed", err)
+	}
 	qt.Assert(t, qt.IsNil(err))
 	defer prog.Close()
 
