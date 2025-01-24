@@ -944,11 +944,11 @@ var loadKeyFromMapProgramSpec = &ProgramSpec{
 		asm.Add.Imm(asm.R2, -4),
 		asm.StoreImm(asm.R2, 0, 0, asm.Word),
 		// Lookup map[0]
-		asm.FnMapLookupElem.Call(),
+		fnMapLookupElem.Call(),
 		asm.JEq.Imm(asm.R0, 0, "error"),
 		asm.LoadMem(asm.R0, asm.R0, 0, asm.Word),
 		asm.Ja.Label("ret"),
-		// Windows doesn't allow directly using R0 result from FnMapLookupElem.
+		// Windows doesn't allow directly using R0 result from fnMapLookupElem.
 		asm.Mov.Imm(asm.R0, 0).WithSymbol("error"),
 		asm.Return().WithSymbol("ret"),
 	},

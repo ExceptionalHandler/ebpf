@@ -27,7 +27,7 @@ func AttachRawLink(opts RawLinkOptions) (*RawLink, error) {
 	}
 	fmt.Println("Here 3")
 
-	raw, err := efw.EbpfProgramAttachByFd(opts.Program.FD(), &attachTypeGUID)
+	raw, err := efw.EbpfProgramAttachAsFd(opts.Program.FD(), &attachTypeGUID)
 	if err != nil {
 		return nil, fmt.Errorf("attach link: %w", err)
 	}
