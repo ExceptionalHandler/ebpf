@@ -1,43 +1,48 @@
 package internal
 
-import (
-	"runtime"
+import "fmt"
+
+//go:generate go run golang.org/x/tools/cmd/stringer@latest -type=Platform
+
+// Platform identifies a supported eBPF runtime.
+type Platform int
+
+const (
+	UnspecifiedPlatform Platform = iota
+	Linux
+	Windows
 )
 
-// PlatformPrefix returns the platform-dependent syscall wrapper prefix used by
-// the linux kernel.
+const (
+	LinuxTag   = uint32(Linux-1) << PlatformShift
+	WindowsTag = uint32(Windows-1) << PlatformShift
+)
+
+const (
+	PlatformMax   = 0xf
+	PlatformShift = 24
+	PlatformMask  = PlatformMax << PlatformShift
+)
+
+// Encode a [Platform] and a value into a tagged constant.
 //
-// Based on https://github.com/golang/go/blob/master/src/go/build/syslist.go
-// and https://github.com/libbpf/libbpf/blob/master/src/libbpf.c#L10047
-func PlatformPrefix() string {
-	switch runtime.GOARCH {
-	case "386":
-		return "__ia32_"
-	case "amd64", "amd64p32":
-		return "__x64_"
-
-	case "arm", "armbe":
-		return "__arm_"
-	case "arm64", "arm64be":
-		return "__arm64_"
-
-	case "mips", "mipsle", "mips64", "mips64le", "mips64p32", "mips64p32le":
-		return "__mips_"
-
-	case "s390":
-		return "__s390_"
-	case "s390x":
-		return "__s390x_"
-
-	case "riscv", "riscv64":
-		return "__riscv_"
-
-	case "ppc":
-		return "__powerpc_"
-	case "ppc64", "ppc64le":
-		return "__powerpc64_"
-
-	default:
-		return ""
+// The platform tag is stored in the 4 most significant bits. The tags value is
+// one less than the platform constant so that Linux constants remain the same.
+//
+// Returns an error if either p or c are out of bounds.
+func EncodePlatformConstant[T ~uint32](p Platform, c uint32) (T, error) {
+	if p == UnspecifiedPlatform || p > PlatformMax {
+		return 0, fmt.Errorf("invalid platform %d", p)
 	}
+	if c>>PlatformShift > 0 {
+		return 0, fmt.Errorf("invalid constant 0x%x", c)
+	}
+	return T(uint32((p-1)<<PlatformShift) | c), nil
+}
+
+// Decode a [Platform] and a value from a tagged constant.
+func DecodePlatformConstant[T ~uint32](c T) (Platform, uint32) {
+	p := Platform(((c & PlatformMask) >> PlatformShift) + 1)
+	v := uint32(c) & ^uint32(PlatformMask)
+	return p, v
 }

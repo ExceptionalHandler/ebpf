@@ -5,6 +5,7 @@ import (
 	"fmt"
 	"os"
 	"reflect"
+	"runtime"
 	"strings"
 	"testing"
 
@@ -17,7 +18,35 @@ import (
 	"github.com/cilium/ebpf/internal/testutils"
 )
 
+var btfFn = &btf.Func{
+	Name: "_",
+	Type: &btf.FuncProto{
+		Return: &btf.Int{Size: 16},
+		Params: []btf.FuncParam{},
+	},
+	Linkage: btf.StaticFunc,
+}
+
+var multiprogSpec = &ProgramSpec{
+	Name: "test",
+	Type: SocketFilter,
+	Instructions: asm.Instructions{
+		btf.WithFuncMetadata(asm.LoadImm(asm.R0, 0, asm.DWord), btfFn).
+			WithSource(asm.Comment("line info")),
+		asm.Call.Label("fn"),
+		asm.Return(),
+		btf.WithFuncMetadata(asm.LoadImm(asm.R0, 0, asm.DWord), btfFn).
+			WithSource(asm.Comment("line info")).WithSymbol("fn"),
+		asm.Return(),
+	},
+	License: "MIT",
+}
+
 func TestMapInfoFromProc(t *testing.T) {
+	if runtime.GOOS == "windows" {
+		t.Skip("Windows doesn't support /proc.")
+	}
+
 	hash, err := NewMap(&MapSpec{
 		Type:       Hash,
 		KeySize:    4,
@@ -70,47 +99,65 @@ func TestMapInfoFromProcOuterMap(t *testing.T) {
 	qt.Assert(t, qt.Equals(info.MaxEntries, 2))
 }
 
+func validateProgInfo(t *testing.T, info *ProgramInfo) {
+	t.Helper()
+
+	qt.Assert(t, qt.Equals(info.Type, SocketFilter))
+	qt.Assert(t, qt.Equals(info.Tag, "d7edec644f05498d"))
+}
+
 func TestProgramInfo(t *testing.T) {
-	prog := mustSocketFilter(t)
+	prog := mustBasicProgram(t)
 
-	for name, fn := range map[string]func(*sys.FD) (*ProgramInfo, error){
-		"generic": newProgramInfoFromFd,
-		"proc":    newProgramInfoFromProc,
-	} {
-		t.Run(name, func(t *testing.T) {
-			info, err := fn(prog.fd)
-			testutils.SkipIfNotSupported(t, err)
-			if err != nil {
-				t.Fatal("Can't get program info:", err)
+	info, err := newProgramInfoFromProc(prog.fd)
+	testutils.SkipIfNotSupported(t, err)
+	qt.Assert(t, qt.IsNil(err))
+
+			if info.Type != basicProgramType {
+				t.Errorf("Expected Type to be %s, got %s", basicProgramType, info.Type)
 			}
 
-			if info.Type != SocketFilter {
-				t.Error("Expected Type to be SocketFilter, got", info.Type)
+func TestProgramInfoBTF(t *testing.T) {
+	prog, err := NewProgram(multiprogSpec)
+	testutils.SkipIfNotSupported(t, err)
+	qt.Assert(t, qt.IsNil(err))
+	t.Cleanup(func() { prog.Close() })
+
+			if info.Tag != "" {
+				qt.Assert(t, qt.Equals("d7edec644f05498d", info.Tag))
 			}
 
-			if info.Name != "" && info.Name != "test" {
-				t.Error("Expected Name to be test, got", info.Name)
-			}
+	// On kernels before 5.x, nr_jited_ksyms is not set for programs without subprogs.
+	// It's included here since this test uses a bpf program with subprogs.
+	if addrs, ok := info.JitedKsymAddrs(); testutils.IsKernelLessThan(t, "4.18") {
+		qt.Assert(t, qt.IsFalse(ok))
+	} else {
+		qt.Assert(t, qt.IsTrue(ok))
+		qt.Assert(t, qt.IsTrue(len(addrs) > 0))
+	}
 
-			if want := "d7edec644f05498d"; info.Tag != want {
-				t.Errorf("Expected Tag to be %s, got %s", want, info.Tag)
-			}
+	if lens, ok := info.JitedFuncLens(); testutils.IsKernelLessThan(t, "4.18") {
+		qt.Assert(t, qt.IsFalse(ok))
+	} else {
+		qt.Assert(t, qt.IsTrue(ok))
+		qt.Assert(t, qt.IsTrue(len(lens) > 0))
+	}
 
-			if id, ok := info.ID(); ok && id == 0 {
-				t.Error("Expected a valid ID:", id)
-			} else if name == "proc" && ok {
-				t.Error("Expected ID to not be available")
-			}
+	if infos, ok := info.JitedLineInfos(); testutils.IsKernelLessThan(t, "5.0") {
+		qt.Assert(t, qt.IsFalse(ok))
+	} else {
+		qt.Assert(t, qt.IsTrue(ok))
+		qt.Assert(t, qt.IsTrue(len(infos) > 0))
+	}
 
-			if name == "proc" {
-				_, err := info.JitedSize()
-				qt.Assert(t, qt.IsNotNil(err))
-
-				_, err = info.TranslatedSize()
-				qt.Assert(t, qt.IsNotNil(err))
-
-				_, ok := info.CreatedByUID()
-				qt.Assert(t, qt.IsFalse(ok))
+	if funcs, err := info.FuncInfos(); testutils.IsKernelLessThan(t, "5.0") {
+		qt.Assert(t, qt.IsNotNil(err))
+	} else {
+		qt.Assert(t, qt.IsNil(err))
+		qt.Assert(t, qt.HasLen(funcs, 2))
+		qt.Assert(t, qt.ContentEquals(funcs[0].Func, btfFn))
+		qt.Assert(t, qt.ContentEquals(funcs[1].Func, btfFn))
+	}
 
 				_, ok = info.LoadTime()
 				qt.Assert(t, qt.IsFalse(ok))
@@ -118,35 +165,35 @@ func TestProgramInfo(t *testing.T) {
 				_, ok = info.VerifiedInstructions()
 				qt.Assert(t, qt.IsFalse(ok))
 			} else {
-				if jitedSize, err := info.JitedSize(); testutils.IsKernelLessThan(t, "4.13") {
+				if jitedSize, err := info.JitedSize(); testutils.IsKernelLessThan(t, "4.13") || runtime.GOOS == "windows" {
 					qt.Assert(t, qt.IsNotNil(err))
 				} else {
 					qt.Assert(t, qt.IsNil(err))
 					qt.Assert(t, qt.IsTrue(jitedSize > 0))
 				}
 
-				if xlatedSize, err := info.TranslatedSize(); testutils.IsKernelLessThan(t, "4.13") {
+				if xlatedSize, err := info.TranslatedSize(); testutils.IsKernelLessThan(t, "4.13") || runtime.GOOS == "windows" {
 					qt.Assert(t, qt.IsNotNil(err))
 				} else {
 					qt.Assert(t, qt.IsNil(err))
 					qt.Assert(t, qt.IsTrue(xlatedSize > 0))
 				}
 
-				if uid, ok := info.CreatedByUID(); testutils.IsKernelLessThan(t, "4.15") {
+				if uid, ok := info.CreatedByUID(); testutils.IsKernelLessThan(t, "4.15") || runtime.GOOS == "windows" {
 					qt.Assert(t, qt.IsFalse(ok))
 				} else {
 					qt.Assert(t, qt.IsTrue(ok))
 					qt.Assert(t, qt.Equals(uid, uint32(os.Getuid())))
 				}
 
-				if loadTime, ok := info.LoadTime(); testutils.IsKernelLessThan(t, "4.15") {
+				if loadTime, ok := info.LoadTime(); testutils.IsKernelLessThan(t, "4.15") || runtime.GOOS == "windows" {
 					qt.Assert(t, qt.IsFalse(ok))
 				} else {
 					qt.Assert(t, qt.IsTrue(ok))
 					qt.Assert(t, qt.IsTrue(loadTime > 0))
 				}
 
-				if verifiedInsns, ok := info.VerifiedInstructions(); testutils.IsKernelLessThan(t, "5.16") {
+				if verifiedInsns, ok := info.VerifiedInstructions(); testutils.IsKernelLessThan(t, "5.16") || runtime.GOOS == "windows" {
 					qt.Assert(t, qt.IsFalse(ok))
 				} else {
 					qt.Assert(t, qt.IsTrue(ok))
@@ -168,7 +215,7 @@ func TestProgramInfoMapIDs(t *testing.T) {
 	defer arr.Close()
 
 	prog, err := NewProgram(&ProgramSpec{
-		Type: SocketFilter,
+		Type: basicProgramType,
 		Instructions: asm.Instructions{
 			asm.LoadMapPtr(asm.R0, arr.FD()),
 			asm.LoadImm(asm.R0, 2, asm.DWord),
@@ -202,16 +249,7 @@ func TestProgramInfoMapIDs(t *testing.T) {
 }
 
 func TestProgramInfoMapIDsNoMaps(t *testing.T) {
-	prog, err := NewProgram(&ProgramSpec{
-		Type: SocketFilter,
-		Instructions: asm.Instructions{
-			asm.LoadImm(asm.R0, 0, asm.DWord),
-			asm.Return(),
-		},
-		License: "MIT",
-	})
-	qt.Assert(t, qt.IsNil(err))
-	defer prog.Close()
+	prog := mustBasicProgram(t)
 
 	info, err := prog.Info()
 	testutils.SkipIfNotSupported(t, err)
@@ -259,7 +297,7 @@ func TestScanFdInfoReader(t *testing.T) {
 func TestStats(t *testing.T) {
 	testutils.SkipOnOldKernel(t, "5.8", "BPF_ENABLE_STATS")
 
-	prog := mustSocketFilter(t)
+	prog := mustBasicProgram(t)
 
 	pi, err := prog.Info()
 	if err != nil {
@@ -291,6 +329,7 @@ func TestStats(t *testing.T) {
 	}
 
 	if err := testStats(prog); err != nil {
+		testutils.SkipIfNotSupportedOnOS(t, err)
 		t.Error(err)
 	}
 }
@@ -299,10 +338,11 @@ func TestStats(t *testing.T) {
 func BenchmarkStats(b *testing.B) {
 	testutils.SkipOnOldKernel(b, "5.8", "BPF_ENABLE_STATS")
 
-	prog := mustSocketFilter(b)
+	prog := mustBasicProgram(b)
 
 	for n := 0; n < b.N; n++ {
 		if err := testStats(prog); err != nil {
+			testutils.SkipIfNotSupportedOnOS(b, err)
 			b.Fatal(fmt.Errorf("iter %d: %w", n, err))
 		}
 	}
@@ -323,19 +363,19 @@ func testStats(prog *Program) error {
 
 	stats, err := EnableStats(uint32(sys.BPF_STATS_RUN_TIME))
 	if err != nil {
-		return fmt.Errorf("failed to enable stats: %v", err)
+		return fmt.Errorf("failed to enable stats: %w", err)
 	}
 	defer stats.Close()
 
 	// Program execution with runtime statistics enabled.
 	// Should increase both runtime and run counter.
 	if _, _, err := prog.Test(in); err != nil {
-		return fmt.Errorf("failed to trigger program: %v", err)
+		return fmt.Errorf("failed to trigger program: %w", err)
 	}
 
 	pi, err := prog.Info()
 	if err != nil {
-		return fmt.Errorf("failed to get ProgramInfo: %v", err)
+		return fmt.Errorf("failed to get ProgramInfo: %w", err)
 	}
 
 	rc, ok := pi.RunCount()
@@ -359,18 +399,18 @@ func testStats(prog *Program) error {
 	lt := rt
 
 	if err := stats.Close(); err != nil {
-		return fmt.Errorf("failed to disable statistics: %v", err)
+		return fmt.Errorf("failed to disable statistics: %w", err)
 	}
 
 	// Second program execution, with runtime statistics gathering disabled.
 	// Total runtime and run counters are not expected to increase.
 	if _, _, err := prog.Test(in); err != nil {
-		return fmt.Errorf("failed to trigger program: %v", err)
+		return fmt.Errorf("failed to trigger program: %w", err)
 	}
 
 	pi, err = prog.Info()
 	if err != nil {
-		return fmt.Errorf("failed to get ProgramInfo: %v", err)
+		return fmt.Errorf("failed to get ProgramInfo: %w", err)
 	}
 
 	rc, ok = pi.RunCount()
@@ -509,56 +549,4 @@ func TestZero(t *testing.T) {
 
 	qt.Assert(t, qt.IsTrue(zero(&inul)))
 	qt.Assert(t, qt.IsFalse(zero(&ione)))
-}
-
-func TestProgInfoKsym(t *testing.T) {
-	testutils.SkipOnOldKernel(t, "4.18", "Program ksym addresses")
-
-	spec, err := LoadCollectionSpec(testutils.NativeFile(t, "testdata/loader-%s.elf"))
-	qt.Assert(t, qt.IsNil(err))
-
-	var obj struct {
-		Prog *Program `ebpf:"xdp_prog"`
-	}
-	err = spec.LoadAndAssign(&obj, nil)
-	testutils.SkipIfNotSupported(t, err)
-	qt.Assert(t, qt.IsNil(err))
-	defer obj.Prog.Close()
-
-	info, err := obj.Prog.Info()
-	qt.Assert(t, qt.IsNil(err))
-
-	addrs, ok := info.KsymAddrs()
-	qt.Assert(t, qt.IsTrue(ok))
-	qt.Assert(t, qt.HasLen(addrs, 5))
-	for _, addr := range addrs {
-		qt.Assert(t, qt.Not(qt.Equals(addr, 0)))
-	}
-}
-
-func TestProgInfoFuncInfos(t *testing.T) {
-	testutils.SkipOnOldKernel(t, "5.0", "Program func info")
-
-	spec, err := LoadCollectionSpec(testutils.NativeFile(t, "testdata/loader-%s.elf"))
-	qt.Assert(t, qt.IsNil(err))
-
-	var obj struct {
-		Prog *Program `ebpf:"xdp_prog"`
-	}
-	err = spec.LoadAndAssign(&obj, nil)
-	testutils.SkipIfNotSupported(t, err)
-	qt.Assert(t, qt.IsNil(err))
-	defer obj.Prog.Close()
-
-	info, err := obj.Prog.Info()
-	qt.Assert(t, qt.IsNil(err))
-
-	funcs, err := info.FuncInfos()
-	qt.Assert(t, qt.IsNil(err))
-
-	qt.Assert(t, qt.HasLen(funcs, 5))
-	for _, fo := range funcs {
-		qt.Assert(t, qt.IsNotNil(fo.Func))
-		qt.Assert(t, qt.Not(qt.Equals(fo.Func.Name, "")))
-	}
 }
