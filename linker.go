@@ -8,6 +8,7 @@ import (
 	"io"
 	"io/fs"
 	"math"
+	"runtime"
 	"slices"
 	"strings"
 
@@ -250,6 +251,9 @@ func flattenInstructions(name string, progs map[string]*ProgramSpec, refs map[*P
 // instruction stream. It performs last-minute adjustments to the program and
 // runs some sanity checks before sending it off to the kernel.
 func fixupAndValidate(insns asm.Instructions) error {
+	if runtime.GOOS == "windows" {
+		return nil
+	}
 	iter := insns.Iterate()
 	for iter.Next() {
 		ins := iter.Ins

@@ -3,6 +3,7 @@ package btf
 import (
 	"errors"
 	"math"
+	"syscall"
 
 	"github.com/cilium/ebpf/internal"
 	"github.com/cilium/ebpf/internal/errno"
@@ -92,7 +93,7 @@ var haveDeclTags = internal.NewFeatureTest("BTF decl tags", func() error {
 	}
 
 	err := probeBTF(t)
-	if errors.Is(err, unix.EINVAL) {
+	if errors.Is(err, syscall.EINVAL) {
 		return internal.ErrNotSupported
 	}
 	return err
@@ -109,7 +110,7 @@ var haveTypeTags = internal.NewFeatureTest("BTF type tags", func() error {
 	}
 
 	err := probeBTF(t)
-	if errors.Is(err, unix.EINVAL) {
+	if errors.Is(err, syscall.EINVAL) {
 		return internal.ErrNotSupported
 	}
 	return err

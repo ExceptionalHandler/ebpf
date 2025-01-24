@@ -5,6 +5,7 @@ import (
 	"fmt"
 	"io"
 	"runtime"
+	"syscall"
 
 	"github.com/cilium/ebpf/internal/unix"
 )
@@ -53,7 +54,7 @@ func newMemory(fd, size int) (*Memory, error) {
 	// If the map is frozen when an rw mapping is requested, expect EPERM. If the
 	// map was created with BPF_F_RDONLY_PROG, expect EACCES.
 	var ro bool
-	if errors.Is(err, unix.EPERM) || errors.Is(err, unix.EACCES) {
+	if errors.Is(err, syscall.EPERM) || errors.Is(err, syscall.EACCES) {
 		ro = true
 		b, err = unix.Mmap(fd, 0, size, unix.PROT_READ, unix.MAP_SHARED)
 	}

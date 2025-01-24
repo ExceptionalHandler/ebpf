@@ -7,6 +7,7 @@ import (
 	"math"
 	"os"
 	"runtime"
+	"syscall"
 
 	"github.com/cilium/ebpf/asm"
 	"github.com/cilium/ebpf/internal"
@@ -190,10 +191,10 @@ var haveObjName = internal.NewFeatureTest("object names", func() error {
 	// Tolerate EPERM as this runs during ELF loading which is potentially
 	// unprivileged. Only EINVAL is conclusive, thrown from CHECK_ATTR.
 	fd, err := sys.MapCreate(&attr)
-	if errors.Is(err, unix.EPERM) {
+	if errors.Is(err, syscall.EPERM) {
 		return nil
 	}
-	if errors.Is(err, unix.EINVAL) {
+	if errors.Is(err, syscall.EINVAL) {
 		return internal.ErrNotSupported
 	}
 	if err != nil {
@@ -225,10 +226,10 @@ var objNameAllowsDot = internal.NewFeatureTest("dot in object names", func() err
 	// unprivileged tools. (bpf2go, other code gen). Only EINVAL is conclusive,
 	// thrown from bpf_obj_name_cpy().
 	fd, err := sys.MapCreate(&attr)
-	if errors.Is(err, unix.EPERM) {
+	if errors.Is(err, syscall.EPERM) {
 		return nil
 	}
-	if errors.Is(err, unix.EINVAL) {
+	if errors.Is(err, syscall.EINVAL) {
 		return internal.ErrNotSupported
 	}
 	if err != nil {

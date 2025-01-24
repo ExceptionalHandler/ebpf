@@ -85,5 +85,5 @@ func loadCollectionFromNativeImage(file string) (*Collection, error) {
 		return nil, err
 	}
 
-	return &Collection{programs, maps}, nil
+	return &Collection{programs, maps, nil}, nil
 }
