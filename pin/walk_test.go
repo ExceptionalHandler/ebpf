@@ -10,6 +10,7 @@ import (
 	"github.com/go-quicktest/qt"
 
 	"github.com/cilium/ebpf"
+	"github.com/cilium/ebpf/internal"
 	"github.com/cilium/ebpf/internal/platform"
 	"github.com/cilium/ebpf/internal/testutils"
 )
@@ -19,11 +20,19 @@ func TestWalkDir(t *testing.T) {
 
 	tmp := testutils.TempBPFFS(t)
 
+	if platform.IsWindows {
+		// Windows doesn't have a BPF file system, so mkdir below fails.
+		qt.Assert(t, qt.ErrorIs(WalkDir(tmp, nil), internal.ErrNotSupportedOnOS))
+		return
+	}
+
 	dir := filepath.Join(tmp, "dir")
 	if !platform.IsWindows {
 		// Windows doesn't have a BPF file system, so mkdir below fails.
 		qt.Assert(t, qt.IsNil(os.Mkdir(dir, 0755)))
 	}
+	err := WalkDir(tmp, bpffn)
+	qt.Assert(t, qt.IsNil(err))
 
 	progPath := filepath.Join(tmp, "pinned_prog")
 	mustPinnedProgram(t, progPath)
