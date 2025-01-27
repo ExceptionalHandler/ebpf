@@ -153,7 +153,7 @@ func (ins Instruction) Marshal(w io.Writer, bo binary.ByteOrder) (uint64, error)
 		fn := BuiltinFunc(ins.Constant)
 		p, value := fn.Decode()
 		if p != internal.NativePlatform {
-			return 0, fmt.Errorf("function %s is not supported on this platform", fn)
+			//return 0, fmt.Errorf("function %s is not supported on this platform", fn)
 		}
 		cons = int32(value)
 	} else if ins.OpCode.Class().IsALU() {

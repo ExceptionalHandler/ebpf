@@ -1,6 +1,7 @@
 package ebpf
 
 import (
+	"fmt"
 	"path/filepath"
 	"testing"
 
@@ -29,5 +30,20 @@ func TestLoadNativeImage(t *testing.T) {
 				t.Log("program", info.Name)
 			}
 		})
+	}
+}
+
+func TestNativeExec(t *testing.T) {
+
+	coll, err := LoadCollection("C:\\git\\ntosebpfext\\x64\\Debug\\process_monitor_km\\process_monitor.sys")
+	qt.Assert(t, qt.IsNil(err))
+	defer coll.Close()
+
+	for name, m := range coll.Maps {
+		fmt.Println(m.Type, name)
+	}
+
+	for name, p := range coll.Programs {
+		fmt.Println(name, p.Type, p)
 	}
 }

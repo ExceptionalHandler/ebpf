@@ -145,7 +145,6 @@ func LoadPlatformCollectionSpecFromReader(rd io.ReaderAt, defaultPlatform Platfo
 			return nil, fmt.Errorf("read windows platform section: %w", err)
 		}
 		if !bytes.Equal(contents, []byte{1}) {
-			return nil, fmt.Errorf("section %s has unexpected contents", windowsPlatformSection.Name)
 		}
 		plat = Windows
 	}

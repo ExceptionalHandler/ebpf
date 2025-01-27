@@ -18,30 +18,6 @@ import (
 	"github.com/cilium/ebpf/internal/testutils"
 )
 
-var btfFn = &btf.Func{
-	Name: "_",
-	Type: &btf.FuncProto{
-		Return: &btf.Int{Size: 16},
-		Params: []btf.FuncParam{},
-	},
-	Linkage: btf.StaticFunc,
-}
-
-var multiprogSpec = &ProgramSpec{
-	Name: "test",
-	Type: SocketFilter,
-	Instructions: asm.Instructions{
-		btf.WithFuncMetadata(asm.LoadImm(asm.R0, 0, asm.DWord), btfFn).
-			WithSource(asm.Comment("line info")),
-		asm.Call.Label("fn"),
-		asm.Return(),
-		btf.WithFuncMetadata(asm.LoadImm(asm.R0, 0, asm.DWord), btfFn).
-			WithSource(asm.Comment("line info")).WithSymbol("fn"),
-		asm.Return(),
-	},
-	License: "MIT",
-}
-
 func TestMapInfoFromProc(t *testing.T) {
 	if runtime.GOOS == "windows" {
 		t.Skip("Windows doesn't support /proc.")
@@ -99,65 +75,47 @@ func TestMapInfoFromProcOuterMap(t *testing.T) {
 	qt.Assert(t, qt.Equals(info.MaxEntries, 2))
 }
 
-func validateProgInfo(t *testing.T, info *ProgramInfo) {
-	t.Helper()
-
-	qt.Assert(t, qt.Equals(info.Type, SocketFilter))
-	qt.Assert(t, qt.Equals(info.Tag, "d7edec644f05498d"))
-}
-
 func TestProgramInfo(t *testing.T) {
 	prog := mustBasicProgram(t)
 
-	info, err := newProgramInfoFromProc(prog.fd)
-	testutils.SkipIfNotSupported(t, err)
-	qt.Assert(t, qt.IsNil(err))
+	for name, fn := range map[string]func(*sys.FD) (*ProgramInfo, error){
+		"generic": newProgramInfoFromFd,
+		"proc":    newProgramInfoFromProc,
+	} {
+		t.Run(name, func(t *testing.T) {
+			info, err := fn(prog.fd)
+			testutils.SkipIfNotSupported(t, err)
+			if err != nil {
+				t.Fatal("Can't get program info:", err)
+			}
 
 			if info.Type != basicProgramType {
 				t.Errorf("Expected Type to be %s, got %s", basicProgramType, info.Type)
 			}
 
-func TestProgramInfoBTF(t *testing.T) {
-	prog, err := NewProgram(multiprogSpec)
-	testutils.SkipIfNotSupported(t, err)
-	qt.Assert(t, qt.IsNil(err))
-	t.Cleanup(func() { prog.Close() })
+			if info.Name != "" && info.Name != "test" {
+				t.Error("Expected Name to be test, got", info.Name)
+			}
 
 			if info.Tag != "" {
 				qt.Assert(t, qt.Equals("d7edec644f05498d", info.Tag))
 			}
 
-	// On kernels before 5.x, nr_jited_ksyms is not set for programs without subprogs.
-	// It's included here since this test uses a bpf program with subprogs.
-	if addrs, ok := info.JitedKsymAddrs(); testutils.IsKernelLessThan(t, "4.18") {
-		qt.Assert(t, qt.IsFalse(ok))
-	} else {
-		qt.Assert(t, qt.IsTrue(ok))
-		qt.Assert(t, qt.IsTrue(len(addrs) > 0))
-	}
+			if id, ok := info.ID(); ok && id == 0 {
+				t.Error("Expected a valid ID:", id)
+			} else if name == "proc" && ok {
+				t.Error("Expected ID to not be available")
+			}
 
-	if lens, ok := info.JitedFuncLens(); testutils.IsKernelLessThan(t, "4.18") {
-		qt.Assert(t, qt.IsFalse(ok))
-	} else {
-		qt.Assert(t, qt.IsTrue(ok))
-		qt.Assert(t, qt.IsTrue(len(lens) > 0))
-	}
+			if name == "proc" {
+				_, err := info.JitedSize()
+				qt.Assert(t, qt.IsNotNil(err))
 
-	if infos, ok := info.JitedLineInfos(); testutils.IsKernelLessThan(t, "5.0") {
-		qt.Assert(t, qt.IsFalse(ok))
-	} else {
-		qt.Assert(t, qt.IsTrue(ok))
-		qt.Assert(t, qt.IsTrue(len(infos) > 0))
-	}
+				_, err = info.TranslatedSize()
+				qt.Assert(t, qt.IsNotNil(err))
 
-	if funcs, err := info.FuncInfos(); testutils.IsKernelLessThan(t, "5.0") {
-		qt.Assert(t, qt.IsNotNil(err))
-	} else {
-		qt.Assert(t, qt.IsNil(err))
-		qt.Assert(t, qt.HasLen(funcs, 2))
-		qt.Assert(t, qt.ContentEquals(funcs[0].Func, btfFn))
-		qt.Assert(t, qt.ContentEquals(funcs[1].Func, btfFn))
-	}
+				_, ok := info.CreatedByUID()
+				qt.Assert(t, qt.IsFalse(ok))
 
 				_, ok = info.LoadTime()
 				qt.Assert(t, qt.IsFalse(ok))
@@ -549,4 +507,56 @@ func TestZero(t *testing.T) {
 
 	qt.Assert(t, qt.IsTrue(zero(&inul)))
 	qt.Assert(t, qt.IsFalse(zero(&ione)))
+}
+
+func TestProgInfoKsym(t *testing.T) {
+	testutils.SkipOnOldKernel(t, "4.18", "Program ksym addresses")
+
+	spec, err := LoadCollectionSpec(testutils.NativeFile(t, "testdata/loader-%s.elf"))
+	qt.Assert(t, qt.IsNil(err))
+
+	var obj struct {
+		Prog *Program `ebpf:"xdp_prog"`
+	}
+	err = spec.LoadAndAssign(&obj, nil)
+	testutils.SkipIfNotSupported(t, err)
+	qt.Assert(t, qt.IsNil(err))
+	defer obj.Prog.Close()
+
+	info, err := obj.Prog.Info()
+	qt.Assert(t, qt.IsNil(err))
+
+	addrs, ok := info.KsymAddrs()
+	qt.Assert(t, qt.IsTrue(ok))
+	qt.Assert(t, qt.HasLen(addrs, 5))
+	for _, addr := range addrs {
+		qt.Assert(t, qt.Not(qt.Equals(addr, 0)))
+	}
+}
+
+func TestProgInfoFuncInfos(t *testing.T) {
+	testutils.SkipOnOldKernel(t, "5.0", "Program func info")
+
+	spec, err := LoadCollectionSpec(testutils.NativeFile(t, "testdata/loader-%s.elf"))
+	qt.Assert(t, qt.IsNil(err))
+
+	var obj struct {
+		Prog *Program `ebpf:"xdp_prog"`
+	}
+	err = spec.LoadAndAssign(&obj, nil)
+	testutils.SkipIfNotSupported(t, err)
+	qt.Assert(t, qt.IsNil(err))
+	defer obj.Prog.Close()
+
+	info, err := obj.Prog.Info()
+	qt.Assert(t, qt.IsNil(err))
+
+	funcs, err := info.FuncInfos()
+	qt.Assert(t, qt.IsNil(err))
+
+	qt.Assert(t, qt.HasLen(funcs, 5))
+	for _, fo := range funcs {
+		qt.Assert(t, qt.IsNotNil(fo.Func))
+		qt.Assert(t, qt.Not(qt.Equals(fo.Func.Name, "")))
+	}
 }
