@@ -1,7 +1,6 @@
 package ebpf
 
 import (
-	"fmt"
 	"path/filepath"
 	"testing"
 
@@ -39,11 +38,16 @@ func TestNativeExec(t *testing.T) {
 	qt.Assert(t, qt.IsNil(err))
 	defer coll.Close()
 
-	for name, m := range coll.Maps {
-		fmt.Println(m.Type, name)
+	for _, m := range coll.Maps {
+		info, err := m.Info()
+		qt.Assert(t, qt.IsNil(err))
+		t.Log("map", info.Name)
 	}
 
-	for name, p := range coll.Programs {
-		fmt.Println(name, p.Type, p)
+	for _, p := range coll.Programs {
+		info, err := p.Info()
+		qt.Assert(t, qt.IsNil(err))
+		t.Log("program", info.Name)
 	}
+
 }
