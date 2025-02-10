@@ -82,7 +82,7 @@ Attach a program.
 		size_t attach_parameters_size,
 		_Out_ fd_t* link)
 */
-var ebpfProgramAttachAsFdProc = newProc("ebpf_program_attach_as_fd")
+var ebpfProgramAttachAsFdProc = newProc("ebpf_program_attach_by_fd")
 
 func EbpfProgramAttachAsFd(fd int, attachType *windows.GUID) (int, error) {
 	var link FD

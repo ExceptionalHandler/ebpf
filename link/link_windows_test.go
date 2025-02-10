@@ -3,12 +3,14 @@ package link
 import (
 	"errors"
 	"os/exec"
+	"strings"
 	"testing"
 
 	"github.com/go-quicktest/qt"
 
 	"github.com/cilium/ebpf"
 	"github.com/cilium/ebpf/asm"
+	"github.com/cilium/ebpf/internal/efw"
 	"github.com/cilium/ebpf/internal/errno"
 )
 
@@ -92,4 +94,30 @@ func TestProcessLink(t *testing.T) {
 	qt.Assert(t, qt.Equals(value, 1), qt.Commentf("Executing a binary should trigger the program"))
 
 	qt.Assert(t, qt.IsNil(link.Close()))
+}
+
+func TestNativeExec(t *testing.T) {
+
+	coll, err := ebpf.LoadCollection("C:\\git\\ntosebpfext\\x64\\Debug\\process_monitor_km\\process_monitor.sys")
+	qt.Assert(t, qt.IsNil(err))
+	defer coll.Close()
+	var ringBufMap *ebpf.Map = nil
+	for _, m := range coll.Maps {
+		info, err := m.Info()
+		qt.Assert(t, qt.IsNil(err))
+		t.Log("map", info.Name)
+		if strings.Contains(info.Name, "ring") {
+			ringBufMap = m
+		}
+	}
+
+	link, err := AttachRawLink(RawLinkOptions{
+		Program: coll.Programs["ProcessMonitor"],
+		Attach:  ebpf.AttachWindowsProcess,
+	})
+	qt.Assert(t, qt.IsNil(err))
+	defer link.Close()
+
+	efw.GetRigbufEvents(ringBufMap.FD(), int(ringBufMap.MaxEntries()))
+
 }
