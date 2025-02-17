@@ -24,5 +24,3 @@ you should be able to simply ssh into the VM by executing `ssh $IP`.
 * `libvirt` using qemu backend
 * `genisoimage`
 * `curl`
-* `envsubst`
-* `fzf` (optional, to select an ssh key)

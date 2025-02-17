@@ -1,10 +1,10 @@
-#!/usr/bin/env bash
+#!/bin/bash
 
 set -euo pipefail
 
 # Variables
-VIRTIO_ISO_URL="https://fedorapeople.org/groups/virt/virtio-win/direct-downloads/archive-virtio/virtio-win-0.1.266-1/virtio-win-0.1.266.iso"
-VIRTIO_ISO="/tmp/virtio-win.iso"
+VIRTIO_ISO_URL="https://fedorapeople.org/groups/virt/virtio-win/direct-downloads/stable-virtio/virtio-win.iso"
+VIRTIO_ISO="/var/lib/libvirt/images/virtio-win.iso"
 
 # Check if ISO path is provided
 if [ -z "$1" ]; then
@@ -12,11 +12,6 @@ if [ -z "$1" ]; then
     exit 1
 else
     ISO_PATH=$1
-fi
-
-if [ "$(whoami)" = "root" ]; then
-  echo "Do not run this script as root: it prevents detecting the correct user name"
-  exit 1
 fi
 
 # Prompt settings
@@ -42,18 +37,13 @@ if [ -z "$SSH_PUBKEY" ]; then
   exit 1
 fi
 
-# Check disk before starting download
+# Disk path
 VM_DISK="/var/lib/libvirt/images/${VM_NAME}.qcow2"
-
-if [ -f "$VM_DISK" ]; then
-  echo "Error: $VM_DISK already exists"
-  exit 1
-fi
 
 # Download Virtio Drivers ISO
 echo "Downloading Virtio drivers ISO..."
-curl -L -o "$VIRTIO_ISO" --etag-save "$VIRTIO_ISO.tmp" --etag-compare "$VIRTIO_ISO.etag" "$VIRTIO_ISO_URL"
-mv "$VIRTIO_ISO.tmp" "$VIRTIO_ISO.etag"
+sudo curl -L -o "$VIRTIO_ISO" --etag-save "$VIRTIO_ISO.tmp" --etag-compare "$VIRTIO_ISO.etag" "$VIRTIO_ISO_URL"
+sudo mv "$VIRTIO_ISO.tmp" "$VIRTIO_ISO.etag"
 
 # Create autounattend
 temp="$(mktemp -d)"
@@ -67,6 +57,13 @@ trap cleanup EXIT
 chmod 0755 "$temp"
 mkdir -p "$temp/mount" "$temp/modifications"
 
+# Make virtio disk drivers available to setup
+#
+# https://learn.microsoft.com/en-us/troubleshoot/windows-client/setup-upgrade-and-drivers/limitations-dollar-sign-winpedriver-dollar-sign
+sudo mount -o loop "$VIRTIO_ISO" "$temp/mount"
+mkdir "$temp/modifications/\$WinpeDriver\$"
+cp -r --no-preserve=mode "$temp/mount/amd64/w11" "$temp/modifications/\$WinpeDriver\$"
+sudo umount "$temp/mount"
 
 # Prepare an installation file automatically installs Windows.
 #
@@ -96,36 +93,42 @@ genisoimage \
 # Create VM Disk
 sudo qemu-img create -f qcow2 "$VM_DISK" "${DISK_SIZE}G"
 
-# Define and create the VM using virt-install.
-# This will start the VM.
+CPU="host-passthrough"
+# The CPU is chosen to disable TSX, and features necessary to run Hyper-V inside
+# the VM are enabled. See:
+#  * https://www.redpill-linpro.com/techblog/2021/04/07/nested-virtualization-hyper-v-in-qemu-kvm.html
+#  * https://qemu-project.gitlab.io/qemu/system/qemu-cpu-models.html
+# CPU="Broadwell-noTSX-IBRS,-hypervisor,+vmx"
+
+# Define and create the VM using virt-install
 sudo virt-install \
   --connect qemu:///system \
   --name "$VM_NAME" \
   --ram "$RAM_MB" \
   --vcpus "$(nproc),cores=$(nproc)" \
-  --cpu "host-passthrough,check=none,migratable=off,feature.vmx=require,feature.hle=disable,feature.rtm=disable" \
+  --cpu "$CPU" \
   --os-variant win11 \
-  --network network=default,model=e1000 \
+  --network network=default,model=virtio \
   --channel type=unix,source.mode=bind,target.type=virtio,target.name=org.qemu.guest_agent.0 \
   --graphics spice \
-  --disk path="$VM_DISK",format=qcow2,bus=sata,size="$DISK_SIZE",boot.order=1 \
+  --disk path="$VM_DISK",format=qcow2,bus=virtio,size="$DISK_SIZE",boot.order=1 \
   --disk path="$temp/win.iso",device=cdrom,bus=sata,boot.order=2 \
   --disk path="$VIRTIO_ISO",device=cdrom,bus=sata \
   --install bootdev=cdrom \
-  --boot uefi,firmware.feature0.name=enrolled-keys,firmware.feature0.enabled=no  \
-  --noautoconsole
+  --boot uefi,firmware.feature0.name=enrolled-keys,firmware.feature0.enabled=no \
+  --noautoconsole # \
+  # --features hyperv.synic.state=on \
+  # --xml ./features/hyperv/vpindex/@state=on \
 
+# Start the VM
 echo "Windows VM setup initiated, click through the installer."
-echo "You may have to manually start the VM a couple of times."
-
-# Show the graphical output so that the user can follow along.
 virt-manager --connect qemu:///system --show-domain-console "$VM_NAME"
 
 echo "Waiting for VM to receive an IP."
 ip=""
 while [ -z "$ip" ]; do
+  ip="$(virsh domifaddr "$VM_NAME" | gawk 'match($0, /([[:digit:]\.]+)\//, a) { print a[1] }')"
   sleep 10
-  ip="$(virsh --connect qemu:///system domifaddr "$VM_NAME" | gawk 'match($0, /([[:digit:]\.]+)\//, a) { print a[1] }')"
   echo -n .
 done
 echo

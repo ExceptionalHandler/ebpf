@@ -1,4 +1,4 @@
-# Working on the Windows port
+# How to work on the Windows port
 
 The library has basic support for interacting with eBPF for Windows (efW).
 Things are subject to change because eBPF for Windows has not had a stable (signed) release yet.
@@ -15,21 +15,40 @@ Things are subject to change because eBPF for Windows has not had a stable (sign
 * eBPF for Windows has a large user-space component which ebpf-go calls into
   via dynamic runtime linking. This uses the same infrastructure as CGo but
   does not require a C toolchain and is therefore trivial to distribute.
+  It is harder to debug and has higher overheads however.
+
+## Platform specific ELFs
+
+ELFs compiled against Linux and Windows headers are not binary compatible.
+This means that the library needs to understand what platform an object was
+compiled for.
+
+Add the following to ELFs targeting Windows until there is an
+[official way to declare the platform]:
+
+```C
+char __ebpf_go_platform[] __section(".ebpf_go_platform") = "windows";
+```
 
 ## Exported API
 
 The library only supports a subset of the full API on Windows, because the eBPF for
-Windows runtime doesn't yet or never will support certain features. API which
-are not supported will return `ErrNotSupported`. Some interfaces such as Linux-specific
-link types are removed outright, but this is kept to a minimum since it is very
-cumbersome for users to deal with API that change based on platform.
+Windows runtime doesn't yet or never will support certain features.
+
+* Package `ebpf`, `asm` and `btf` export the same API, but many functions
+  will return a new sentinel error `ErrNotSupportedOnOS`. The idea is that
+  `Map` and `Program` will eventually converge between the two platforms.
+  Exposing the same API across OS minimises the amount of changes we need to
+  make to these foundational packages and their dependents.
+* Package `rlimit` exposes the same API but becomes a no-op.
+* Package `link` retains the same `Link` abstraction but only exposes link types supported by Windows.
+* Other packages are not available on Windows for now.
 
 ## Development setup
 
 The port is developed using a Windows VM running on a Linux host.
-There is a [script](https://github.com/cilium/ebpf/tree/main/scripts/windows)
-which automates the Windows installation.
-After the installation finishes you should be able to SSH to
+There is a [script](../../../scripts/windows/) which automates the Windows
+installation. After the installation finishes you should be able to SSH to
 the VM and [follow the instructions to clone and build eBPF for Windows][efw-clone].
 __Execute `Import-VsEnv` (installed by the setup script) to add `msbuild` to PATH.__
 
@@ -44,18 +63,20 @@ MSBuild version 17.10.4+10fbfbf2e for .NET Framework
 MSBUILD : error MSB1003: Specify a project or solution file. The current working directory does not contain a project or solution file.
 ```
 
-!!! note "Pre-built eBPF for Windows binaries"
-    You may be able to download precompiled binaries from the [efW CI/CD] pipeline.
-    Look for an artifact called "Build-x64-Debug", which should contain
-    `setup-ebpf.ps1` mentioned below.
-
 After compilation finishes you can install the runtime:
 
 ```
 .\x64\Debug\setup-ebpf.ps1
 ```
 
-_(You can pass `-Uninstall` to the script to remove a previous installation.)_
+_(You can pass `-Uninstall` to the script to remove a previous installation. This currently runs into an [annoying bug], however.)_
+
+!!! `ebpfsvc.exe` fails to start with error 1053
+    This will happen the first time you install the Debug version of the runtime
+    using `setup-ebpf.ps`, due to the service not being able to [access the debug version of the msvc runtime].
+    As a workaround, copy the [msvc debug DLLs] into the folder containing `ebpfsvc.exe`.
+    This is usually `C:\Program Files\ebpf-for-windows\JIT`. You only need to do
+    this once.
 
 You can now run the Go unit tests of the library:
 
@@ -63,10 +84,10 @@ You can now run the Go unit tests of the library:
 go test ./internal/sys
 ```
 
-!!! note "Tests fail with `load ebpfapi.dll: not found`"
+!!! Tests fail with `load ebpfapi.dll: not found`
     This usually means that either the Windows runtime is not installed or that
     the efW installation folder is not on the PATH yet. The latter tends to
-    happen when executing tests via ssh, since sshd doesn't pick up
+    happen when executing tests via ssh, since the service doesn't pick up
     changes in the environment without restarting.
     Restart the service by issuing `Restart-Service sshd` from a powershell
     prompt and then re-establish the ssh session.
@@ -97,12 +118,20 @@ Debugging on Windows is a bit painful, since we call from Go into `ebpfapi.dll`
 which is implemented in C++. There is currently no debugger which understands
 both C++ and Go.
 
-The most fruitful approach is to use [WinDbg].
-It will catch exceptions in C++ code, give useful backtraces and allows stepping
-through source code.
+The most fruitful approach is to use [CDB] which is a bit like the Windows equivalent of `gdb`.
+It will catch exceptions in C++ code and give useful backtraces. In theory it is
+possible to use this via the command line:
 
-Run the WinDbg GUI as an administrator and then open the executable via `Ctrl-E`.
-At the prompt you can set a breakpoint on `bpf()`:
+```
+cd internal/sys
+go test -c .
+& "C:\Program Files (x86)\Windows Kits\10\Debuggers\x64\cdb.exe" -o .\sys.test.exe
+```
+
+__However debugging with CDB via ssh doesn't seem to work__. Instead you need to run
+the [WinDbg] GUI as an administrator and then open the executable via `Ctrl-E`.
+
+At the CDB / WinDbg prompt you can set a breakpoint on `bpf()`:
 
 ```
 bu ebpfapi!bpf
@@ -111,9 +140,6 @@ g
 
 This will halt execution once the library calls into `bpf()` inside `ebpfapi.dll`.
 Use the [`CDB` commands][cdb-commands] or the GUI to navigate.
-
-It may be possible to use [CDB] to debug via the command line, but this doesn't
-seem to work via ssh.
 
 ### Windows trace log
 
@@ -163,6 +189,7 @@ efW uses several layers of error codes.
   This usually manifests in cryptic `Errno(119)` errors.
 
 [efw-clone]: https://github.com/microsoft/ebpf-for-windows/blob/main/docs/GettingStarted.md#how-to-clone-and-build-the-project-using-visual-studio
+[annoying bug]: https://github.com/microsoft/ebpf-for-windows/issues/3760
 [CDB]: https://learn.microsoft.com/en-us/windows-hardware/drivers/debugger/debugging-using-cdb-and-ntsd
 [cdb-commands]: https://learn.microsoft.com/en-us/windows-hardware/drivers/debuggercmds/commands
 [WinDbg]: https://learn.microsoft.com/en-us/windows-hardware/drivers/debugger/
@@ -174,4 +201,4 @@ efW uses several layers of error codes.
 [ntosebpfext]: https://github.com/microsoft/ntosebpfext
 [access the debug version of the msvc runtime]: https://github.com/microsoft/ebpf-for-windows/issues/3872
 [msvc debug DLLs]: https://github.com/microsoft/ebpf-for-windows/blob/7005b7ff47e7281843d6b414cd69fc5a979507c8/scripts/setup-ebpf.ps1#L17-L27
-[efW CI/CD]: https://github.com/microsoft/ebpf-for-windows/actions/workflows/cicd.yml?query=branch%3Amain+is%3Acompleted
+[official way to declare the platform]: https://github.com/microsoft/ebpf-for-windows/issues/3956

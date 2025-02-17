@@ -1,11 +1,11 @@
-#!/usr/bin/env bash
+#!/bin/bash
 # Install dependencies required by eBPF for Windows.
 
 set -euo pipefail
 
 VM_NAME="$1"
 
-ip=$(virsh --connect qemu:///system domifaddr "$VM_NAME" | gawk 'match($0, /([[:digit:]\.]+)\//, a) { print a[1] }')
+ip=$(virsh domifaddr "$VM_NAME" | gawk 'match($0, /([[:digit:]\.]+)\//, a) { print a[1] }')
 
 if [ -z "$ip" ]; then
   echo "Can't figure out IP address of VM, giving up"
