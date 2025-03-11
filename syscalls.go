@@ -24,7 +24,7 @@ var (
 	// unnecessary memory allocations
 	sysErrKeyNotExist  = sys.Error(ErrKeyNotExist, unix.ENOENT)
 	sysErrKeyExist     = sys.Error(ErrKeyExist, unix.EEXIST)
-	sysErrNotSupported = sys.Error(ErrNotSupported, unix.ENOTSUP)
+	sysErrNotSupported = sys.Error(ErrNotSupported, sys.ENOTSUPP)
 )
 
 // invalidBPFObjNameChar returns true if char may not appear in
