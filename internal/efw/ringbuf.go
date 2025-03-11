@@ -173,8 +173,15 @@ func invokeIoctl(request unsafe.Pointer, dwReqSize uint32, response unsafe.Point
 
 func EbpfGetHandleFromFd(fd int) (uintptr, error) {
 	var handle uintptr
-	err := ebpfGetHandleFromFd.CallResult(uintptr(fd), uintptr(unsafe.Pointer(&handle)))
-	return handle, err
+	addr, err := ebpfGetHandleFromFd.Find()
+	if err != nil {
+		return 0, err
+	}
+	_, _, err = syscall.SyscallN(addr, uintptr(fd), uintptr(unsafe.Pointer(&handle)))
+	if err != nil {
+		return 0, err
+	}
+	return handle, nil
 }
 
 func GetOverlappedEvent() uintptr {
