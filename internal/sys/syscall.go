@@ -4,7 +4,7 @@ import (
 	"runtime"
 	"unsafe"
 
-	"github.com/cilium/ebpf/internal/errno"
+	"github.com/cilium/ebpf/internal/unix"
 )
 
 // ENOTSUPP is a Linux internal error code that has leaked into UAPI.
