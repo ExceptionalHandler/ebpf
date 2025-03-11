@@ -3,13 +3,18 @@ package link
 import (
 	"errors"
 	"os/exec"
+	"runtime"
+	"strings"
 	"testing"
+	"unsafe"
 
 	"github.com/go-quicktest/qt"
 	"golang.org/x/sys/windows"
 
 	"github.com/cilium/ebpf"
 	"github.com/cilium/ebpf/asm"
+	"github.com/cilium/ebpf/internal/efw"
+	"github.com/cilium/ebpf/internal/sys"
 	"github.com/cilium/ebpf/internal/unix"
 )
 
@@ -121,7 +126,7 @@ func TestNativeExecGood(t *testing.T) {
 
 	link, err := AttachRawLink(RawLinkOptions{
 		Program: coll.Programs["ProcessMonitor"],
-		Attach:  ebpf.AttachWindowsProcess,
+		Attach:  windowsAttachTypeFromGUID(t, attachTypeProcessGUID),
 	})
 	qt.Assert(t, qt.IsNil(err))
 	defer link.Close()
@@ -182,7 +187,7 @@ func TestNativeExecBad(t *testing.T) {
 
 	_, err = AttachRawLink(RawLinkOptions{
 		Program: coll.Programs["ProcessMonitor"],
-		Attach:  ebpf.AttachWindowsProcess,
+		Attach:  windowsAttachTypeFromGUID(t, attachTypeProcessGUID),
 	})
 	qt.Assert(t, qt.IsNil(err))
 
@@ -230,6 +235,8 @@ func TestUnpin(t *testing.T) {
 	sys.Unpin("process::process_ringbuf")
 	sys.Unpin("process::command_map")
 	sys.Unpin("process::process_map")
+}
+
 func makeGUID(data1 uint32, data2 uint16, data3 uint16, data4 [8]byte) windows.GUID {
 	return windows.GUID{Data1: data1, Data2: data2, Data3: data3, Data4: data4}
 }
