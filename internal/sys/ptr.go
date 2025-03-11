@@ -2,6 +2,8 @@ package sys
 
 import (
 	"unsafe"
+
+	"golang.org/x/sys/unix"
 )
 
 // UnsafePointer creates a 64-bit pointer from an unsafe Pointer.
@@ -45,9 +47,6 @@ func NewStringPointer(str string) StringPointer {
 	}
 
 	return StringPointer{ptr: Pointer{ptr: unsafe.Pointer(&slice[0])}}
-}
-
-	ptr Pointer
 }
 
 // NewStringSlicePointer allocates an array of Pointers to each string in the

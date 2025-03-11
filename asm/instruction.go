@@ -72,7 +72,11 @@ func (ins *Instruction) Unmarshal(r io.Reader, bo binary.ByteOrder, platform str
 		switch ins.OpCode.ALUOp() {
 		case Div:
 			if ins.Offset == 1 {
+				ins.OpCode = ins.OpCode.SetALUOp(SDiv)
+				ins.Offset = 0
+			}
 		case Mod:
+			if ins.Offset == 1 {
 				ins.OpCode = ins.OpCode.SetALUOp(SMod)
 				ins.Offset = 0
 			}
