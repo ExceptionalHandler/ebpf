@@ -335,7 +335,7 @@ func TestProgramVerifierLog(t *testing.T) {
 
 	// Start out with testing against the invalid program.
 	spec := &ProgramSpec{
-		Type:         basicProgramType,
+		Type:         SocketFilter,
 		License:      "MIT",
 		Instructions: invalid,
 	}
@@ -588,7 +588,7 @@ func TestProgramSpecTag(t *testing.T) {
 	arr := createMap(t, Array, 2)
 
 	spec := &ProgramSpec{
-		Type: basicProgramType,
+		Type: SocketFilter,
 		Instructions: asm.Instructions{
 			asm.LoadImm(asm.R0, -1, asm.DWord),
 			asm.LoadMapPtr(asm.R1, arr.FD()),
@@ -737,7 +737,7 @@ func TestProgramBindMap(t *testing.T) {
 func TestProgramInstructions(t *testing.T) {
 	name := "test_prog"
 	spec := &ProgramSpec{
-		Type: basicProgramType,
+		Type: SocketFilter,
 		Name: name,
 		Instructions: asm.Instructions{
 			asm.LoadImm(asm.R0, -1, asm.DWord).WithSymbol(name),
@@ -850,7 +850,7 @@ func BenchmarkNewProgram(b *testing.B) {
 // Print the full verifier log when loading a program fails.
 func ExampleVerifierError_retrieveFullLog() {
 	_, err := NewProgram(&ProgramSpec{
-		Type: basicProgramType,
+		Type: SocketFilter,
 		Instructions: asm.Instructions{
 			asm.LoadImm(asm.R0, 0, asm.DWord),
 			// Missing Return
@@ -898,7 +898,7 @@ func ExampleVerifierError() {
 // generating error messages.
 func ExampleProgram_retrieveVerifierLog() {
 	spec := &ProgramSpec{
-		Type: basicProgramType,
+		Type: SocketFilter,
 		Instructions: asm.Instructions{
 			asm.LoadImm(asm.R0, 0, asm.DWord),
 			asm.Return(),
@@ -952,7 +952,7 @@ func ExampleProgram_unmarshalFromMap() {
 
 func ExampleProgramSpec_Tag() {
 	spec := &ProgramSpec{
-		Type: basicProgramType,
+		Type: SocketFilter,
 		Instructions: asm.Instructions{
 			asm.LoadImm(asm.R0, 0, asm.DWord),
 			asm.Return(),
