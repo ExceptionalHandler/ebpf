@@ -10,7 +10,7 @@ BEGIN {
 	print ""
 	print "// Code in this file is derived from eBPF for Windows, available under the MIT License."
 	print ""
-	print "import \"github.com/cilium/ebpf/internal\""
+	print "import \"github.com/cilium/ebpf/internal/platform\""
 	print ""
 	print "// Built-in functions (Windows)."
 	print "const ("
@@ -27,7 +27,7 @@ BEGIN {
 		result = result substr(toupper(substr(part,1,1)), 1, 1) substr(part, 2)
 	}
 
-	print "\t" result " = BuiltinFunc(internal.WindowsTag | " id ")"
+	print "\t" result " = BuiltinFunc(platform.WindowsTag | " id ")"
 }
 
 END {

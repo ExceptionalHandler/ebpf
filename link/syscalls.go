@@ -10,6 +10,7 @@ import (
 	"github.com/cilium/ebpf/internal"
 	"github.com/cilium/ebpf/internal/errno"
 	"github.com/cilium/ebpf/internal/sys"
+	"github.com/cilium/ebpf/internal/unix"
 )
 
 var haveProgAttach = internal.NewFeatureTest("BPF_PROG_ATTACH", func() error {

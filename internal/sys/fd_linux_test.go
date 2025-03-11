@@ -1,6 +1,7 @@
 package sys
 
 import (
+	"errors"
 	"os"
 	"syscall"
 	"testing"
@@ -31,7 +32,7 @@ func reserveFdZero() {
 		panic(err)
 	}
 	if fd != 0 {
-		panic("couldn't reserve fd 0")
+		panic(errors.New("zero fd already taken"))
 	}
 }
 
@@ -53,12 +54,16 @@ func TestFD(t *testing.T) {
 
 func TestFDFile(t *testing.T) {
 	fd := newFD(openFd(t))
-	file := fd.File("test")
+	file, err := fd.File("test")
+	qt.Assert(t, qt.IsNil(err))
 	qt.Assert(t, qt.IsNotNil(file))
-	qt.Assert(t, qt.IsNil(file.Close()))
-	qt.Assert(t, qt.IsNil(fd.File("closed")))
 
-	_, err := fd.Dup()
+	qt.Assert(t, qt.IsNil(file.Close()))
+
+	_, err = fd.File("closed")
+	qt.Assert(t, qt.ErrorIs(err, ErrClosedFd))
+
+	_, err = fd.Dup()
 	qt.Assert(t, qt.ErrorIs(err, ErrClosedFd))
 }
 

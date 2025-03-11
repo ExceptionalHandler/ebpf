@@ -5,8 +5,8 @@ package link
 import (
 	"fmt"
 
-	"github.com/cilium/ebpf"
 	"github.com/cilium/ebpf/internal"
+	"github.com/cilium/ebpf/internal/platform"
 	"github.com/cilium/ebpf/internal/sys"
 )
 
@@ -27,25 +27,6 @@ const (
 	NetkitType        = sys.BPF_LINK_TYPE_NETKIT
 )
 
-// NewLinkFromFD creates a link from a raw fd.
-//
-// Deprecated: use [NewFromFD] instead.
-func NewLinkFromFD(fd int) (Link, error) {
-	return NewFromFD(fd)
-}
-
-// NewFromFD creates a link from a raw fd.
-//
-// You should not use fd after calling this function.
-func NewFromFD(fd int) (Link, error) {
-	sysFD, err := sys.NewFD(fd)
-	if err != nil {
-		return nil, err
-	}
-
-	return wrapRawLink(&RawLink{fd: sysFD})
-}
-
 // AttachRawLink creates a raw link.
 func AttachRawLink(opts RawLinkOptions) (*RawLink, error) {
 	if err := haveBPFLink(); err != nil {
@@ -61,8 +42,8 @@ func AttachRawLink(opts RawLinkOptions) (*RawLink, error) {
 		return nil, fmt.Errorf("invalid program: %s", sys.ErrClosedFd)
 	}
 
-	p, attachType := opts.Attach.Decode()
-	if p != ebpf.Linux {
+	p, attachType := platform.DecodeConstant(opts.Attach)
+	if p != "linux" {
 		return nil, fmt.Errorf("attach type %s: %w", opts.Attach, internal.ErrNotSupportedOnOS)
 	}
 
@@ -79,11 +60,6 @@ func AttachRawLink(opts RawLinkOptions) (*RawLink, error) {
 	}
 
 	return &RawLink{fd, ""}, nil
-}
-
-// FD returns the raw file descriptor.
-func (l *RawLink) FD() int {
-	return l.fd.Int()
 }
 
 // wrap a RawLink in a more specific type if possible.

@@ -4,8 +4,9 @@ import (
 	"flag"
 	"fmt"
 	"os"
-	"runtime"
 	"sync"
+
+	"github.com/cilium/ebpf/internal/platform"
 )
 
 type testingM interface {
@@ -19,7 +20,7 @@ func Run(m testingM) {
 	const traceLogFlag = "trace-log"
 
 	var ts *traceSession
-	if runtime.GOOS == "windows" {
+	if platform.IsWindows {
 		traceLog := flag.Bool(traceLogFlag, false, "Output a trace of eBPF runtime activity")
 		flag.Parse()
 
@@ -49,7 +50,7 @@ func Run(m testingM) {
 		ret = 99
 	}
 
-	if runtime.GOOS == "windows" && ret != 0 && ts == nil {
+	if platform.IsWindows && ret != 0 && ts == nil {
 		fmt.Fprintf(os.Stderr, "Consider enabling trace logging with -%s\n", traceLogFlag)
 	}
 

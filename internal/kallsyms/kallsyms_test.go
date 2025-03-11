@@ -8,6 +8,9 @@ import (
 	"testing"
 
 	"github.com/go-quicktest/qt"
+
+	"github.com/cilium/ebpf/internal/platform"
+	"github.com/cilium/ebpf/internal/testutils"
 )
 
 var syms = []byte(`0000000000000001 t hid_generic_probe	[hid_generic]
@@ -39,15 +42,8 @@ func TestParseSyms(t *testing.T) {
 }
 
 func TestParseProcKallsyms(t *testing.T) {
-	f, err := os.Open("/proc/kallsyms")
-	if runtime.GOOS != "linux" && errors.Is(err, os.ErrNotExist) {
-		t.Skip("/proc/kallsyms doesn't exist")
-	}
-	qt.Assert(t, qt.IsNil(err))
-	defer f.Close()
-
 	// Read up to 50k symbols from kallsyms to avoid a slow test.
-	r := newReader(f)
+	r := newReader(mustOpenProcKallsyms(t))
 	for i := 0; r.Line() && i < 50_000; i++ {
 		s, err, skip := parseSymbol(r, nil)
 		qt.Assert(t, qt.IsNil(err))
@@ -64,9 +60,7 @@ func TestAssignModulesCaching(t *testing.T) {
 			"foo":                   "",
 		},
 	)
-	if runtime.GOOS != "linux" && errors.Is(err, os.ErrNotExist) {
-		t.Skip("File doesn't exist:", err)
-	}
+	testutils.SkipIfNotSupportedOnOS(t, err)
 	qt.Assert(t, qt.IsNil(err))
 
 	// Can't assume any kernel modules are loaded, but this symbol should at least
@@ -107,9 +101,7 @@ func TestAssignAddressesCaching(t *testing.T) {
 			"foo":                   0,
 		},
 	)
-	if runtime.GOOS != "linux" && errors.Is(err, os.ErrNotExist) {
-		t.Skip("File doesn't exist:", err)
-	}
+	testutils.SkipIfNotSupportedOnOS(t, err)
 	qt.Assert(t, qt.IsNil(err))
 
 	v, ok := symAddrs.Load("bpf_perf_event_output")
@@ -146,8 +138,7 @@ func BenchmarkSymbolKmods(b *testing.B) {
 	b.ReportAllocs()
 	for i := 0; i < b.N; i++ {
 		b.StopTimer()
-		f, err := os.Open("/proc/kallsyms")
-		qt.Assert(b, qt.IsNil(err))
+		f := mustOpenProcKallsyms(b)
 		want := map[string]string{
 			"bpf_trace_vprintk":     "",
 			"bpf_send_signal":       "",
@@ -160,8 +151,6 @@ func BenchmarkSymbolKmods(b *testing.B) {
 		if err := assignModules(f, want); err != nil {
 			b.Fatal(err)
 		}
-
-		f.Close()
 	}
 }
 
@@ -170,8 +159,7 @@ func BenchmarkAssignAddresses(b *testing.B) {
 	b.ReportAllocs()
 	for i := 0; i < b.N; i++ {
 		b.StopTimer()
-		f, err := os.Open("/proc/kallsyms")
-		qt.Assert(b, qt.IsNil(err))
+		f := mustOpenProcKallsyms(b)
 		want := map[string]uint64{
 			"bpf_trace_vprintk":     0,
 			"bpf_send_signal":       0,
@@ -184,7 +172,18 @@ func BenchmarkAssignAddresses(b *testing.B) {
 		if err := assignAddresses(f, want); err != nil {
 			b.Fatal(err)
 		}
-
-		f.Close()
 	}
+}
+
+func mustOpenProcKallsyms(tb testing.TB) *os.File {
+	tb.Helper()
+
+	if !platform.IsLinux {
+		tb.Skip("/proc/kallsyms is a Linux concept")
+	}
+
+	f, err := os.Open("/proc/kallsyms")
+	qt.Assert(tb, qt.IsNil(err))
+	tb.Cleanup(func() { f.Close() })
+	return f
 }

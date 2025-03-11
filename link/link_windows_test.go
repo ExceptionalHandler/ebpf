@@ -3,15 +3,23 @@ package link
 import (
 	"errors"
 	"os/exec"
-	"strings"
 	"testing"
 
 	"github.com/go-quicktest/qt"
+	"golang.org/x/sys/windows"
 
 	"github.com/cilium/ebpf"
 	"github.com/cilium/ebpf/asm"
-	"github.com/cilium/ebpf/internal/efw"
-	"github.com/cilium/ebpf/internal/errno"
+	"github.com/cilium/ebpf/internal/unix"
+)
+
+// ntosebpfext has not yet assigned a stable enum value so we can't refer to
+// it via that (https://github.com/microsoft/ntosebpfext/issues/152).
+//
+// See https://github.com/microsoft/ntosebpfext/blob/75ceaac38a0254e44f3219852d79a336d10ad9f3/include/ebpf_ntos_program_attach_type_guids.h
+var (
+	programTypeProcessGUID = makeGUID(0x22ea7b37, 0x1043, 0x4d0d, [8]byte{0xb6, 0x0d, 0xca, 0xfa, 0x1c, 0x7b, 0x63, 0x8e})
+	attachTypeProcessGUID  = makeGUID(0x66e20687, 0x9805, 0x4458, [8]byte{0xa0, 0xdb, 0x38, 0xe2, 0x20, 0xd3, 0x16, 0x85})
 )
 
 func testLinkArch(t *testing.T, link Link) {
@@ -52,7 +60,7 @@ func TestProcessLink(t *testing.T) {
 	defer array.Close()
 
 	prog, err := ebpf.NewProgram(&ebpf.ProgramSpec{
-		Type: ebpf.WindowsProcess,
+		Type: windowsProgramTypeFromGUID(t, programTypeProcessGUID),
 		Name: "process_test",
 		Instructions: asm.Instructions{
 			// R1 = map
@@ -74,7 +82,7 @@ func TestProcessLink(t *testing.T) {
 		},
 		License: "MIT",
 	})
-	if errors.Is(err, errno.EINVAL) {
+	if errors.Is(err, unix.EINVAL) {
 		t.Logf("Got %s: check that ntosebpfext is installed", err)
 	}
 	qt.Assert(t, qt.IsNil(err))
@@ -82,7 +90,7 @@ func TestProcessLink(t *testing.T) {
 
 	link, err := AttachRawLink(RawLinkOptions{
 		Program: prog,
-		Attach:  ebpf.AttachWindowsProcess,
+		Attach:  windowsAttachTypeFromGUID(t, attachTypeProcessGUID),
 	})
 	qt.Assert(t, qt.IsNil(err))
 	defer link.Close()
@@ -96,28 +104,6 @@ func TestProcessLink(t *testing.T) {
 	qt.Assert(t, qt.IsNil(link.Close()))
 }
 
-func TestNativeExec(t *testing.T) {
-
-	coll, err := ebpf.LoadCollection("C:\\git\\ntosebpfext\\x64\\Debug\\process_monitor_km\\process_monitor.sys")
-	qt.Assert(t, qt.IsNil(err))
-	defer coll.Close()
-	var ringBufMap *ebpf.Map = nil
-	for _, m := range coll.Maps {
-		info, err := m.Info()
-		qt.Assert(t, qt.IsNil(err))
-		t.Log("map", info.Name)
-		if strings.Contains(info.Name, "ring") {
-			ringBufMap = m
-		}
-	}
-
-	link, err := AttachRawLink(RawLinkOptions{
-		Program: coll.Programs["ProcessMonitor"],
-		Attach:  ebpf.AttachWindowsProcess,
-	})
-	qt.Assert(t, qt.IsNil(err))
-	defer link.Close()
-
-	efw.GetRigbufEvents(ringBufMap.FD(), int(ringBufMap.MaxEntries()))
-
+func makeGUID(data1 uint32, data2 uint16, data3 uint16, data4 [8]byte) windows.GUID {
+	return windows.GUID{Data1: data1, Data2: data2, Data3: data3, Data4: data4}
 }

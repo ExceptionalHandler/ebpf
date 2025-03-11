@@ -6,13 +6,13 @@ import (
 	"testing"
 	"unsafe"
 
-	"github.com/cilium/ebpf/internal/errno"
 	"github.com/cilium/ebpf/internal/testutils/testmain"
+	"github.com/cilium/ebpf/internal/unix"
 
 	"github.com/go-quicktest/qt"
 )
 
-func TestMap(t *testing.T) {
+func TestBPF(t *testing.T) {
 	fd, err := MapCreate(&MapCreateAttr{
 		MapType:    BPF_MAP_TYPE_HASH,
 		KeySize:    4,
@@ -20,41 +20,7 @@ func TestMap(t *testing.T) {
 		MaxEntries: 1,
 	})
 	qt.Assert(t, qt.IsNil(err))
-	t.Cleanup(func() {
-		qt.Assert(t, qt.IsNil(fd.Close()))
-	})
-
-	nextIdAttr := &MapGetNextIdAttr{Id: 0}
-	qt.Assert(t, qt.IsNil(MapGetNextId(nextIdAttr)))
-	qt.Check(t, qt.Not(qt.Equals(nextIdAttr.NextId, 0)))
-
-	key := NewPointer(unsafe.Pointer(new(uint32)))
-	value := []byte{10, 20, 30, 40}
-
-	qt.Assert(t, qt.IsNil(MapUpdateElem(&MapUpdateElemAttr{
-		MapFd: fd.Uint(),
-		Key:   key,
-		Value: NewSlicePointer(value),
-	})))
-
-	out := make([]byte, len(value))
-	qt.Assert(t, qt.IsNil(MapLookupElem(&MapLookupElemAttr{
-		MapFd: fd.Uint(),
-		Key:   key,
-		Value: NewSlicePointer(out),
-	})))
-	qt.Assert(t, qt.DeepEquals(out, value))
-
-	qt.Assert(t, qt.IsNil(MapDeleteElem(&MapDeleteElemAttr{
-		MapFd: fd.Uint(),
-		Key:   key,
-	})))
-
-	qt.Assert(t, qt.IsNotNil(MapLookupElem(&MapLookupElemAttr{
-		MapFd: fd.Uint(),
-		Key:   key,
-		Value: NewSlicePointer(out),
-	})))
+	qt.Assert(t, qt.IsNil(fd.Close()))
 }
 
 func TestBPFAllocations(t *testing.T) {

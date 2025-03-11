@@ -4,7 +4,6 @@ package link
 
 import (
 	"os"
-	"reflect"
 	"testing"
 
 	"github.com/go-quicktest/qt"
@@ -13,7 +12,6 @@ import (
 	"github.com/cilium/ebpf/asm"
 	"github.com/cilium/ebpf/internal/sys"
 	"github.com/cilium/ebpf/internal/testutils"
-	"github.com/cilium/ebpf/internal/unix"
 )
 
 func testLinkArch(t *testing.T, link Link) {
@@ -84,36 +82,6 @@ func testLinkArch(t *testing.T, link Link) {
 					// since it's not easy to trigger from tests.
 				}
 			}
-		}
-	})
-
-	type FDer interface {
-		FD() int
-	}
-
-	t.Run("from fd", func(t *testing.T) {
-		fder, ok := link.(FDer)
-		if !ok {
-			t.Skip("Link doesn't allow retrieving FD")
-		}
-
-		// We need to dup the FD since NewLinkFromFD takes
-		// ownership.
-		dupFD, err := unix.FcntlInt(uintptr(fder.FD()), unix.F_DUPFD_CLOEXEC, 1)
-		if err != nil {
-			t.Fatal("Can't dup link FD:", err)
-		}
-		defer unix.Close(dupFD)
-
-		newLink, err := NewFromFD(dupFD)
-		testutils.SkipIfNotSupported(t, err)
-		if err != nil {
-			t.Fatal("Can't create new link from dup link FD:", err)
-		}
-		defer newLink.Close()
-
-		if _, isRawLink := link.(*RawLink); !isRawLink && reflect.TypeOf(newLink) != reflect.TypeOf(link) {
-			t.Fatalf("Expected type %T, got %T", link, newLink)
 		}
 	})
 }

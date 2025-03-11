@@ -49,11 +49,9 @@ func (r Result) Error() string {
 	return r.String()
 }
 
-func ResultToError(res Result) error {
-	switch res {
-	case EBPF_SUCCESS:
+func resultToError(res Result) error {
+	if res == EBPF_SUCCESS {
 		return nil
-	default:
-		return res
 	}
+	return res
 }

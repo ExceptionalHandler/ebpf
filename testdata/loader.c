@@ -58,9 +58,15 @@ struct {
 		});
 } btf_outer_map_anon __section(".maps");
 
+struct perf_event {
+	uint64_t foo;
+	uint64_t bar;
+};
+
 struct {
 	__uint(type, BPF_MAP_TYPE_PERF_EVENT_ARRAY);
 	__uint(max_entries, 4096);
+	__type(value, struct perf_event);
 } perf_event_array __section(".maps");
 
 struct bpf_map_def array_of_hash_map __section("maps") = {
@@ -143,29 +149,6 @@ __section("socket/3") int data_sections() {
 	if (static_neg != -4)
 		return __LINE__;
 
-	return 0;
-}
-
-// Should not appear in CollectionSpec.Variables.
-__hidden volatile uint32_t hidden;
-
-// Weak variables can be overridden by non-weak symbols when linking BPF
-// programs using bpftool. Make sure they appear in CollectionSpec.Variables.
-// Emit to its own section to avoid collisions with other symbols in .bss that
-// accidentally increase its refcount.
-__weak volatile uint32_t weak __section(".data.weak");
-
-struct struct_var_t {
-	uint64_t a;
-	uint64_t b;
-};
-volatile struct struct_var_t struct_var __section(".data.struct");
-
-__section("socket") int set_vars() {
-	hidden       = 0xbeef1;
-	weak         = 0xbeef2;
-	struct_var.a = 0xbeef3;
-	struct_var.b = 0xbeef4;
 	return 0;
 }
 

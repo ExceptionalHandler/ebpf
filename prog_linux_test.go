@@ -1,15 +1,16 @@
 package ebpf
 
 import (
-	"bytes"
+	"fmt"
 	"math"
 	"runtime"
+	"slices"
 	"testing"
 	"time"
 
 	"github.com/go-quicktest/qt"
 
-	"github.com/cilium/ebpf/btf"
+	"github.com/cilium/ebpf/asm"
 	"github.com/cilium/ebpf/internal"
 	"github.com/cilium/ebpf/internal/testutils"
 	"github.com/cilium/ebpf/internal/unix"
@@ -18,7 +19,7 @@ import (
 func TestProgramTestRunInterrupt(t *testing.T) {
 	testutils.SkipOnOldKernel(t, "5.0", "EINTR from BPF_PROG_TEST_RUN")
 
-	prog := mustBasicProgram(t)
+	prog := createBasicProgram(t)
 
 	var (
 		tgid    = unix.Getpid()
@@ -87,41 +88,50 @@ func TestProgramTestRunInterrupt(t *testing.T) {
 	}
 }
 
-func TestProgramLoadErrors(t *testing.T) {
-	testutils.SkipOnOldKernel(t, "4.10", "stable verifier log output")
+func TestProgramVerifierLogLinux(t *testing.T) {
+	check := func(t *testing.T, err error) {
+		t.Helper()
 
-	spec, err := LoadCollectionSpec(testutils.NativeFile(t, "testdata/errors-%s.elf"))
-	qt.Assert(t, qt.IsNil(err))
+		var ve *internal.VerifierError
+		qt.Assert(t, qt.ErrorAs(err, &ve))
 
-	var b btf.Builder
-	raw, err := b.Marshal(nil, nil)
-	qt.Assert(t, qt.IsNil(err))
-	empty, err := btf.LoadSpecFromReader(bytes.NewReader(raw))
-	qt.Assert(t, qt.IsNil(err))
-
-	for _, test := range []struct {
-		name string
-		want error
-	}{
-		{"poisoned_single", errBadRelocation},
-		{"poisoned_double", errBadRelocation},
-		{"poisoned_kfunc", errUnknownKfunc},
-	} {
-		progSpec := spec.Programs[test.name]
-		qt.Assert(t, qt.IsNotNil(progSpec))
-
-		t.Run(test.name, func(t *testing.T) {
-			t.Log(progSpec.Instructions)
-			_, err := NewProgramWithOptions(progSpec, ProgramOptions{
-				KernelTypes: empty,
-			})
-			testutils.SkipIfNotSupported(t, err)
-
-			var ve *VerifierError
-			qt.Assert(t, qt.ErrorAs(err, &ve))
-			t.Logf("%-5v", ve)
-
-			qt.Assert(t, qt.ErrorIs(err, test.want))
-		})
+		loglen := len(fmt.Sprintf("%+v", ve))
+		qt.Assert(t, qt.IsTrue(loglen > minVerifierLogSize),
+			qt.Commentf("Log buffer didn't grow past minimum, got %d bytes", loglen))
 	}
+
+	// Generate a base program of sufficient size whose verifier log does not fit
+	// in the minimum buffer size. Stay under 4096 insn limit of older kernels.
+	var base asm.Instructions
+	for i := 0; i < 4093; i++ {
+		base = append(base, asm.Mov.Reg(asm.R0, asm.R1))
+	}
+
+	// Touch R10 (read-only frame pointer) to reliably force a verifier error.
+	invalid := slices.Clone(base)
+	invalid = append(invalid, asm.Mov.Reg(asm.R10, asm.R0))
+	invalid = append(invalid, asm.Return())
+
+	valid := slices.Clone(base)
+	valid = append(valid, asm.Return())
+
+	// Start out with testing against the invalid program.
+	spec := &ProgramSpec{
+		Type:         SocketFilter,
+		License:      "MIT",
+		Instructions: invalid,
+	}
+
+	_, err := newProgram(t, spec, nil)
+	check(t, err)
+
+	// Run tests against a valid program from here on out.
+	spec.Instructions = valid
+
+	// Explicitly request verifier log for a valid program and a start size.
+	prog := mustNewProgram(t, spec, &ProgramOptions{
+		LogLevel:     LogLevelInstruction,
+		LogSizeStart: minVerifierLogSize * 2,
+	})
+	qt.Assert(t, qt.IsTrue(len(prog.VerifierLog) > minVerifierLogSize))
 }

@@ -5,8 +5,8 @@ import (
 	"runtime"
 	"strconv"
 
-	"github.com/cilium/ebpf/internal/errno"
 	"github.com/cilium/ebpf/internal/testutils/testmain"
+	"github.com/cilium/ebpf/internal/unix"
 )
 
 var ErrClosedFd = errno.EBADF
@@ -38,6 +38,10 @@ func (fd *FD) finalize() {
 	_ = fd.Close()
 }
 
+func (fd *FD) String() string {
+	return strconv.FormatInt(int64(fd.raw), 10)
+}
+
 func (fd *FD) Int() int {
 	return int(fd.raw)
 }
@@ -51,11 +55,10 @@ func (fd *FD) Uint() uint32 {
 	return uint32(fd.raw)
 }
 
-func (fd *FD) String() string {
-	return strconv.FormatInt(int64(fd.raw), 10)
-}
-
-func (fd *FD) disown() int {
+// Disown destroys the FD and returns its raw file descriptor without closing
+// it. After this call, the underlying fd is no longer tied to the FD's
+// lifecycle.
+func (fd *FD) Disown() int {
 	value := fd.raw
 	testmain.ForgetFD(value)
 	fd.raw = invalidFd

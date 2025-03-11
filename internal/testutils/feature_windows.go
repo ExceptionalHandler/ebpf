@@ -1,15 +1,19 @@
 package testutils
 
 import (
+	"os"
 	"testing"
 
 	"github.com/cilium/ebpf/internal"
+
+	"github.com/go-quicktest/qt"
 )
 
-func runtimeVersion(tb testing.TB) internal.Version {
+func platformVersion(tb testing.TB) internal.Version {
 	tb.Helper()
-	// TODO(windows): We need a function which exposes the efW runtime version.
-	// Probably need to contribute this upstream.
-	tb.Fatal("runtimeVersion() not implemented yet")
-	return internal.Version{}
+	versionStr, ok := os.LookupEnv("CI_EFW_VERSION")
+	qt.Assert(tb, qt.IsTrue(ok), qt.Commentf("Missing CI_EFW_VERSION environment variable"))
+	version, err := internal.NewVersion(versionStr)
+	qt.Assert(tb, qt.IsNil(err), qt.Commentf("Parse eBPF for Windows version"))
+	return version
 }
