@@ -18,7 +18,7 @@ ebpf_result_t ebpf_object_load_native_by_fds(
 	_Inout_ size_t* count_of_programs,
 	_Out_writes_opt_(count_of_programs) fd_t* program_fds)
 */
-var ebpfObjectLoadNativeByFdsProc = newProc("ebpf_object_load_native_by_fds")
+var ebpfObjectLoadNativeByFdsProc = newProc("ebpf_object_load_native_fds")
 
 func EbpfObjectLoadNativeFds(fileName string, mapFds []FD, programFds []FD) (int, int, error) {
 	addr, err := ebpfObjectLoadNativeByFdsProc.Find()
