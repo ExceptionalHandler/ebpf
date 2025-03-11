@@ -66,7 +66,7 @@ func TestProgramRun(t *testing.T) {
 
 	prog := mustNewProgram(t, &ProgramSpec{
 		Name:         "test",
-		Type:         xdpProgramType,
+		Type:         XDP,
 		Instructions: ins,
 		License:      "MIT",
 	}, nil)
