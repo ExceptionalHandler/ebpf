@@ -189,7 +189,7 @@ func testLink(t *testing.T, link Link, prog *ebpf.Program) {
 		// ownership.
 		dupFD := testutils.DupFD(t, fder.FD())
 
-		newLink, err := NewFromID(dupFD)
+		newLink, err := NewFromFD(dupFD)
 		testutils.SkipIfNotSupported(t, err)
 		if err != nil {
 			t.Fatal("Can't create new link from dup link FD:", err)
