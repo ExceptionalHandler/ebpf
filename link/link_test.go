@@ -10,9 +10,9 @@ import (
 	"github.com/go-quicktest/qt"
 
 	"github.com/cilium/ebpf"
-	"github.com/cilium/ebpf/internal/errno"
 	"github.com/cilium/ebpf/internal/testutils"
 	"github.com/cilium/ebpf/internal/testutils/testmain"
+	"github.com/cilium/ebpf/internal/unix"
 )
 
 func TestMain(m *testing.M) {
@@ -175,9 +175,50 @@ func testLink(t *testing.T, link Link, prog *ebpf.Program) {
 
 	testLinkArch(t, link)
 
+	type FDer interface {
+		FD() int
+	}
+		fder, ok := link.(FDer)
+		if !ok {
+			t.Skip("Link doesn't allow retrieving FD")
+		}
+
+		// We need to dup the FD since NewLinkFromFD takes
+		// ownership.
+		dupFD := testutils.DupFD(t, fder.FD())
+
+		newLink, err := NewFromFD(dupFD)
+		testutils.SkipIfNotSupported(t, err)
+		if err != nil {
+			t.Fatal("Can't create new link from dup link FD:", err)
+		}
+		defer newLink.Close()
+
+		if !isRawLink && reflect.TypeOf(newLink) != reflect.TypeOf(link) {
+			t.Fatalf("Expected type %T, got %T", link, newLink)
+		}
+	})
+
 	if err := link.Close(); err != nil {
 		t.Fatalf("%T.Close returns an error: %s", link, err)
 	}
+}
+func TestLoadWrongPin(t *testing.T) {
+	l, p := newRawLink(t)
+
+	tmp := testutils.TempBPFFS(t)
+	ppath := filepath.Join(tmp, "prog")
+	lpath := filepath.Join(tmp, "link")
+
+	qt.Assert(t, qt.IsNil(p.Pin(ppath)))
+	qt.Assert(t, qt.IsNil(l.Pin(lpath)))
+
+	_, err := LoadPinnedLink(ppath, nil)
+	qt.Assert(t, qt.IsNotNil(err))
+
+	ll, err := LoadPinnedLink(lpath, nil)
+	qt.Assert(t, qt.IsNil(err))
+	qt.Assert(t, qt.IsNil(ll.Close()))
 }
 
 func newPinnedRawLink(t *testing.T) (*RawLink, string) {

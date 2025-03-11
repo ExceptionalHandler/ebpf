@@ -9,8 +9,8 @@ import (
 
 func TestLoadNativeImage(t *testing.T) {
 	for _, file := range []string{
-		"testdata/empty.sys",
-		"testdata/printk.sys",
+		"testdata/windows/empty.sys",
+		"testdata/windows/printk.sys",
 	} {
 		t.Run(filepath.Base(file), func(t *testing.T) {
 			coll, err := LoadCollection(file)

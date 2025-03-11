@@ -19,6 +19,7 @@ import (
 	"github.com/cilium/ebpf/btf"
 	"github.com/cilium/ebpf/internal"
 	"github.com/cilium/ebpf/internal/errno"
+	"github.com/cilium/ebpf/internal/platform"
 	"github.com/cilium/ebpf/internal/sys"
 	"github.com/cilium/ebpf/internal/sysenc"
 	"github.com/cilium/ebpf/internal/unix"
@@ -47,7 +48,7 @@ type MapOptions struct {
 }
 
 // MapID represents the unique ID of an eBPF map
-type MapID uint32
+type MapID = sys.MapID
 
 // MapSpec defines a Map.
 type MapSpec struct {
@@ -126,8 +127,8 @@ func (ms *MapSpec) Copy() *MapSpec {
 // The copy is only performed if fixups are necessary, so callers mustn't mutate
 // the returned spec.
 func (spec *MapSpec) fixupMagicFields() (*MapSpec, error) {
-	switch spec.Type {
-	case ArrayOfMaps, HashOfMaps, WindowsArrayOfMaps, WindowsHashOfMaps:
+	switch {
+	case spec.Type.canStoreMap():
 		if spec.ValueSize != 0 && spec.ValueSize != 4 {
 			return nil, errors.New("ValueSize must be zero or four for map of map")
 		}
@@ -135,7 +136,7 @@ func (spec *MapSpec) fixupMagicFields() (*MapSpec, error) {
 		spec = spec.Copy()
 		spec.ValueSize = 4
 
-	case PerfEventArray:
+	case spec.Type == PerfEventArray:
 		if spec.KeySize != 0 && spec.KeySize != 4 {
 			return nil, errors.New("KeySize must be zero or four for perf event array")
 		}
@@ -159,6 +160,17 @@ func (spec *MapSpec) fixupMagicFields() (*MapSpec, error) {
 			// of entries to the number of CPUs at most. Allow creating maps with
 			// less than n items since some kernel selftests relied on this
 			// behaviour in the past.
+			spec.MaxEntries = n
+		}
+
+	case spec.Type == CPUMap:
+		n, err := PossibleCPU()
+		if err != nil {
+			return nil, fmt.Errorf("fixup cpu map: %w", err)
+		}
+
+		if n := uint32(n); spec.MaxEntries == 0 || spec.MaxEntries > n {
+			// Perform clamping similar to PerfEventArray.
 			spec.MaxEntries = n
 		}
 	}
@@ -233,13 +245,16 @@ func (ms *MapSpec) Compatible(m *Map) error {
 		diffs = append(diffs, fmt.Sprintf("MaxEntries: %d changed to %d", m.maxEntries, ms.MaxEntries))
 	}
 
-	if runtime.GOOS == "linux" {
-		// BPF_F_RDONLY_PROG is set unconditionally for devmaps. Explicitly allow this
-		// mismatch.
-		if !((ms.Type == DevMap || ms.Type == DevMapHash) && m.flags^ms.Flags == sys.BPF_F_RDONLY_PROG) &&
-			m.flags != ms.Flags {
-			diffs = append(diffs, fmt.Sprintf("Flags: %d changed to %d", m.flags, ms.Flags))
-		}
+	flags := ms.Flags
+	if ms.Type == DevMap || ms.Type == DevMapHash {
+		// As of 0cdbb4b09a06 ("devmap: Allow map lookups from eBPF")
+		// BPF_F_RDONLY_PROG is set unconditionally for devmaps. Explicitly
+		// allow this mismatch.
+		flags |= (m.flags & sys.BPF_F_RDONLY_PROG)
+	}
+
+	if m.flags != flags {
+		diffs = append(diffs, fmt.Sprintf("Flags: %d changed to %d", m.flags, flags))
 	}
 
 	if len(diffs) == 0 {
@@ -269,6 +284,8 @@ type Map struct {
 	pinnedPath string
 	// Per CPU maps return values larger than the size in the spec
 	fullValueSize int
+
+	memory *Memory
 }
 
 // NewMapFromFD creates a map from a raw fd.
@@ -296,7 +313,7 @@ func newMapFromFD(fd *sys.FD) (*Map, error) {
 		return nil, fmt.Errorf("get map info: %w", err)
 	}
 
-	return newMap(fd, info.Name, info.Type, info.KeySize, info.ValueSize, info.MaxEntries, info.Flags)
+	return newMapFromParts(fd, info.Name, info.Type, info.KeySize, info.ValueSize, info.MaxEntries, info.Flags)
 }
 
 // NewMap creates a new Map.
@@ -408,6 +425,51 @@ func newMapWithOptions(spec *MapSpec, opts MapOptions) (_ *Map, err error) {
 	return m, nil
 }
 
+// Memory returns a memory-mapped region for the Map. The Map must have been
+// created with the BPF_F_MMAPABLE flag. Repeated calls to Memory return the
+// same mapping. Callers are responsible for coordinating access to Memory.
+func (m *Map) Memory() (*Memory, error) {
+	if m.memory != nil {
+		return m.memory, nil
+	}
+
+	if m.flags&sys.BPF_F_MMAPABLE == 0 {
+		return nil, fmt.Errorf("Map was not created with the BPF_F_MMAPABLE flag: %w", ErrNotSupported)
+	}
+
+	size, err := m.memorySize()
+	if err != nil {
+		return nil, err
+	}
+
+	mm, err := newMemory(m.FD(), size)
+	if err != nil {
+		return nil, fmt.Errorf("creating new Memory: %w", err)
+	}
+
+	m.memory = mm
+
+	return mm, nil
+}
+
+func (m *Map) memorySize() (int, error) {
+	switch m.Type() {
+	case Array:
+		// In Arrays, values are always laid out on 8-byte boundaries regardless of
+		// architecture. Multiply by MaxEntries and align the result to the host's
+		// page size.
+		size := int(internal.Align(m.ValueSize(), 8) * m.MaxEntries())
+		size = internal.Align(size, os.Getpagesize())
+		return size, nil
+	case Arena:
+		// For Arenas, MaxEntries denotes the maximum number of pages available to
+		// the arena.
+		return int(m.MaxEntries()) * os.Getpagesize(), nil
+	}
+
+	return 0, fmt.Errorf("determine memory size of map type %s: %w", m.Type(), ErrNotSupported)
+}
+
 // createMap validates the spec's properties and creates the map in the kernel
 // using the given opts. It does not populate or freeze the map.
 func (spec *MapSpec) createMap(inner *sys.FD) (_ *Map, err error) {
@@ -432,9 +494,9 @@ func (spec *MapSpec) createMap(inner *sys.FD) (_ *Map, err error) {
 		return nil, err
 	}
 
-	p, sysMapType := spec.Type.Decode()
-	if p != internal.NativePlatform {
-		return nil, fmt.Errorf("map type %s: %w", spec.Type, internal.ErrNotSupportedOnOS)
+	p, sysMapType := platform.DecodeConstant(spec.Type)
+	if p != platform.Native {
+		return nil, fmt.Errorf("map type %s (%s): %w", spec.Type, p, internal.ErrNotSupportedOnOS)
 	}
 
 	attr := sys.MapCreateAttr{
@@ -483,7 +545,7 @@ func (spec *MapSpec) createMap(inner *sys.FD) (_ *Map, err error) {
 	}
 
 	defer closeOnError(fd)
-	m, err := newMap(fd, spec.Name, spec.Type, spec.KeySize, spec.ValueSize, spec.MaxEntries, spec.Flags)
+	m, err := newMapFromParts(fd, spec.Name, spec.Type, spec.KeySize, spec.ValueSize, spec.MaxEntries, spec.Flags)
 	if err != nil {
 		return nil, fmt.Errorf("map create: %w", err)
 	}
@@ -491,7 +553,15 @@ func (spec *MapSpec) createMap(inner *sys.FD) (_ *Map, err error) {
 }
 
 func handleMapCreateError(attr sys.MapCreateAttr, spec *MapSpec, err error) error {
-	if errors.Is(err, errno.EPERM) {
+	if platform.IsWindows {
+		if errors.Is(err, unix.EINVAL) && attr.MapFlags != 0 {
+			return fmt.Errorf("map create: flags: %w", internal.ErrNotSupportedOnOS)
+		}
+
+		return err
+	}
+
+	if errors.Is(err, unix.EPERM) {
 		return fmt.Errorf("map create: %w (MEMLOCK may be too low, consider rlimit.RemoveMemlock)", err)
 	}
 	if errors.Is(err, errno.EINVAL) && spec.MaxEntries == 0 {
@@ -543,9 +613,9 @@ func handleMapCreateError(attr sys.MapCreateAttr, spec *MapSpec, err error) erro
 	return fmt.Errorf("map create: %w", err)
 }
 
-// newMap allocates and returns a new Map structure.
+// newMapFromParts allocates and returns a new Map structure.
 // Sets the fullValueSize on per-CPU maps.
-func newMap(fd *sys.FD, name string, typ MapType, keySize, valueSize, maxEntries, flags uint32) (*Map, error) {
+func newMapFromParts(fd *sys.FD, name string, typ MapType, keySize, valueSize, maxEntries, flags uint32) (*Map, error) {
 	m := &Map{
 		name,
 		fd,
@@ -556,6 +626,7 @@ func newMap(fd *sys.FD, name string, typ MapType, keySize, valueSize, maxEntries
 		flags,
 		"",
 		int(valueSize),
+		nil,
 	}
 
 	if !typ.hasPerCPUValue() {
@@ -705,7 +776,7 @@ func (m *Map) LookupAndDeleteWithFlags(key, valueOut interface{}, flags MapLooku
 // Returns a nil value if a key doesn't exist.
 func (m *Map) LookupBytes(key interface{}) ([]byte, error) {
 	valueBytes := make([]byte, m.fullValueSize)
-	valuePtr := sys.NewSlicePointer(valueBytes)
+	valuePtr := sys.UnsafeSlicePointer(valueBytes)
 
 	err := m.lookup(key, valuePtr, 0)
 	if errors.Is(err, ErrKeyNotExist) {
@@ -721,7 +792,7 @@ func (m *Map) lookupPerCPU(key, valueOut any, flags MapLookupFlags) error {
 		return err
 	}
 	valueBytes := make([]byte, m.fullValueSize)
-	if err := m.lookup(key, sys.NewSlicePointer(valueBytes), flags); err != nil {
+	if err := m.lookup(key, sys.UnsafeSlicePointer(valueBytes), flags); err != nil {
 		return err
 	}
 	return unmarshalPerCPUValue(slice, int(m.valueSize), valueBytes)
@@ -755,7 +826,7 @@ func (m *Map) lookupAndDeletePerCPU(key, valueOut any, flags MapLookupFlags) err
 		return err
 	}
 	valueBytes := make([]byte, m.fullValueSize)
-	if err := m.lookupAndDelete(key, sys.NewSlicePointer(valueBytes), flags); err != nil {
+	if err := m.lookupAndDelete(key, sys.UnsafeSlicePointer(valueBytes), flags); err != nil {
 		return err
 	}
 	return unmarshalPerCPUValue(slice, int(m.valueSize), valueBytes)
@@ -932,7 +1003,7 @@ func (m *Map) NextKey(key, nextKeyOut interface{}) error {
 // Returns nil if there are no more keys.
 func (m *Map) NextKeyBytes(key interface{}) ([]byte, error) {
 	nextKey := make([]byte, m.keySize)
-	nextKeyPtr := sys.NewSlicePointer(nextKey)
+	nextKeyPtr := sys.UnsafeSlicePointer(nextKey)
 
 	err := m.nextKey(key, nextKeyPtr)
 	if errors.Is(err, ErrKeyNotExist) {
@@ -964,7 +1035,7 @@ func (m *Map) nextKey(key interface{}, nextKeyOut sys.Pointer) error {
 	if err = sys.MapGetNextKey(&attr); err != nil {
 		// Kernels 4.4.131 and earlier return EFAULT instead of a pointer to the
 		// first map element when a nil key pointer is specified.
-		if runtime.GOOS == "linux" && key == nil && errors.Is(err, errno.EFAULT) {
+		if platform.IsLinux && key == nil && errors.Is(err, unix.EFAULT) {
 			var guessKey []byte
 			guessKey, err = m.guessNonExistentKey()
 			if err != nil {
@@ -972,7 +1043,7 @@ func (m *Map) nextKey(key interface{}, nextKeyOut sys.Pointer) error {
 			}
 
 			// Retry the syscall with a valid non-existing key.
-			attr.Key = sys.NewSlicePointer(guessKey)
+			attr.Key = sys.UnsafeSlicePointer(guessKey)
 			if err = sys.MapGetNextKey(&attr); err == nil {
 				return nil
 			}
@@ -1002,7 +1073,7 @@ func (m *Map) guessNonExistentKey() ([]byte, error) {
 	if err != nil {
 		return nil, err
 	}
-	valuePtr := sys.NewSlicePointer(page)
+	valuePtr := sys.UnsafeSlicePointer(page)
 
 	randKey := make([]byte, int(m.keySize))
 
@@ -1129,7 +1200,7 @@ func (m *Map) batchLookupPerCPU(cmd sys.Cmd, cursor *MapBatchCursor, keysOut, va
 	}
 
 	valueBuf := make([]byte, count*int(m.fullValueSize))
-	valuePtr := sys.NewSlicePointer(valueBuf)
+	valuePtr := sys.UnsafeSlicePointer(valueBuf)
 
 	n, sysErr := m.batchLookupCmd(cmd, cursor, count, keysOut, valuePtr, opts)
 	if sysErr != nil && !errors.Is(sysErr, errno.ENOENT) {
@@ -1181,8 +1252,8 @@ func (m *Map) batchLookupCmd(cmd sys.Cmd, cursor *MapBatchCursor, count int, key
 		Keys:     keyBuf.Pointer(),
 		Values:   valuePtr,
 		Count:    uint32(count),
-		InBatch:  sys.NewSlicePointer(inBatch),
-		OutBatch: sys.NewSlicePointer(cursor.opaque),
+		InBatch:  sys.UnsafeSlicePointer(inBatch),
+		OutBatch: sys.UnsafeSlicePointer(cursor.opaque),
 	}
 
 	if opts != nil {
@@ -1264,7 +1335,7 @@ func (m *Map) batchUpdatePerCPU(keys, values any, opts *BatchOptions) (int, erro
 		return 0, err
 	}
 
-	return m.batchUpdate(count, keys, sys.NewSlicePointer(valueBuf), opts)
+	return m.batchUpdate(count, keys, sys.UnsafeSlicePointer(valueBuf), opts)
 }
 
 // BatchDelete batch deletes entries in the map by keys.
@@ -1375,6 +1446,7 @@ func (m *Map) Clone() (*Map, error) {
 		m.flags,
 		"",
 		m.fullValueSize,
+		nil,
 	}, nil
 }
 
@@ -1452,7 +1524,7 @@ func (m *Map) marshalKey(data interface{}) (sys.Pointer, error) {
 	if data == nil {
 		if m.keySize == 0 {
 			// Queues have a key length of zero, so passing nil here is valid.
-			return sys.NewPointer(nil), nil
+			return sys.UnsafePointer(nil), nil
 		}
 		return sys.Pointer{}, errors.New("can't use nil as key of map")
 	}
@@ -1487,7 +1559,7 @@ func (m *Map) marshalValue(data interface{}) (sys.Pointer, error) {
 		return sys.Pointer{}, err
 	}
 
-	return sys.NewSlicePointer(buf), nil
+	return sys.UnsafeSlicePointer(buf), nil
 }
 
 func (m *Map) unmarshalValue(value any, buf sysenc.Buffer) error {
@@ -1540,14 +1612,21 @@ func (m *Map) unmarshalValue(value any, buf sysenc.Buffer) error {
 	return buf.Unmarshal(value)
 }
 
-// LoadPinnedMap loads a Map from a BPF file.
+// LoadPinnedMap opens a Map from a pin (file) on the BPF virtual filesystem.
+//
+// Requires at least Linux 4.5.
 func LoadPinnedMap(fileName string, opts *LoadPinOptions) (*Map, error) {
-	fd, err := sys.ObjGet(&sys.ObjGetAttr{
+	fd, typ, err := sys.ObjGetTyped(&sys.ObjGetAttr{
 		Pathname:  sys.NewStringPointer(fileName),
 		FileFlags: opts.Marshal(),
 	})
 	if err != nil {
 		return nil, err
+	}
+
+	if typ != sys.BPF_TYPE_MAP {
+		_ = fd.Close()
+		return nil, fmt.Errorf("%s is not a Map", fileName)
 	}
 
 	m, err := newMapFromFD(fd)
@@ -1569,6 +1648,10 @@ func unmarshalMap(buf sysenc.Buffer) (*Map, error) {
 
 // marshalMap marshals the fd of a map into a buffer in host endianness.
 func marshalMap(m *Map, length int) ([]byte, error) {
+	if m == nil {
+		return nil, errors.New("can't marshal a nil Map")
+	}
+
 	if length != 4 {
 		return nil, fmt.Errorf("can't marshal map to %d bytes", length)
 	}

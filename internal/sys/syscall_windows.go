@@ -1,6 +1,7 @@
 package sys
 
 import (
+	"fmt"
 	"syscall"
 	"unsafe"
 
@@ -8,7 +9,7 @@ import (
 
 	"github.com/cilium/ebpf/internal"
 	"github.com/cilium/ebpf/internal/efw"
-	"github.com/cilium/ebpf/internal/errno"
+	"github.com/cilium/ebpf/internal/unix"
 )
 
 // BPF calls the BPF syscall wrapper in ebpfapi.dll.
@@ -21,23 +22,48 @@ func BPF(cmd Cmd, attr unsafe.Pointer, size uintptr) (uintptr, error) {
 	// Windows it seems like a cgocall may not be preempted:
 	// https://github.com/golang/go/blob/8b51146c698bcfcc2c2b73fa9390db5230f2ce0a/src/runtime/os_windows.go#L1240-L1246
 
-	if err := efw.BPF.Find(); err != nil {
+	addr, err := efw.BPF.Find()
+	if err != nil {
 		return 0, err
 	}
 
 	// Using [LazyProc.Call] forces attr to escape, which isn't the case when using syscall.Syscall directly.
-	// We're not using SyscallN since that causes the slice parameter to escape to the heap.
-	r1, _, lastError := syscall.Syscall(efw.BPF.Addr(), 3, uintptr(cmd), uintptr(attr), size)
+	r1, _, lastError := syscall.SyscallN(addr, uintptr(cmd), uintptr(attr), size)
 
-	// On MSVC (x64, arm64) and MinGW (gcc, clang) sizeof(int) is 4.
-	ret := int(int32(r1))
-	if ret < 0 {
-		eno := errno.Errno(-ret)
-		if eno == errno.EINVAL && lastError == windows.ERROR_CALL_NOT_IMPLEMENTED {
+	if ret := int(efw.Int(r1)); ret < 0 {
+		errNo := unix.Errno(-ret)
+		if errNo == unix.EINVAL && lastError == windows.ERROR_CALL_NOT_IMPLEMENTED {
 			return 0, internal.ErrNotSupportedOnOS
 		}
-		return 0, errno.Error(eno)
+		return 0, wrappedErrno{errNo}
 	}
 
 	return r1, nil
+}
+
+// ObjGetTyped retrieves an pinned object and its type.
+func ObjGetTyped(attr *ObjGetAttr) (*FD, ObjType, error) {
+	fd, err := ObjGet(attr)
+	if err != nil {
+		return nil, 0, err
+	}
+
+	efwType, err := efw.EbpfObjectGetInfoByFd(fd.Int(), nil, nil)
+	if err != nil {
+		_ = fd.Close()
+		return nil, 0, err
+	}
+
+	switch efwType {
+	case efw.EBPF_OBJECT_UNKNOWN:
+		return fd, BPF_TYPE_UNSPEC, nil
+	case efw.EBPF_OBJECT_MAP:
+		return fd, BPF_TYPE_MAP, nil
+	case efw.EBPF_OBJECT_LINK:
+		return fd, BPF_TYPE_LINK, nil
+	case efw.EBPF_OBJECT_PROGRAM:
+		return fd, BPF_TYPE_PROG, nil
+	default:
+		return nil, 0, fmt.Errorf("unrecognized object type %v", efwType)
+	}
 }

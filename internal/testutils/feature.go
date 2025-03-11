@@ -7,7 +7,10 @@ import (
 	"strings"
 	"testing"
 
+	"github.com/go-quicktest/qt"
+
 	"github.com/cilium/ebpf/internal"
+	"github.com/cilium/ebpf/internal/platform"
 )
 
 const (
@@ -15,10 +18,14 @@ const (
 )
 
 func CheckFeatureTest(t *testing.T, fn func() error) {
+	t.Helper()
+
 	checkFeatureTestError(t, fn())
 }
 
 func checkFeatureTestError(t *testing.T, err error) {
+	t.Helper()
+
 	if err == nil {
 		return
 	}
@@ -86,50 +93,61 @@ func checkVersion(tb testing.TB, ufe *internal.UnsupportedFeatureError) {
 		return
 	}
 
-	if !isRuntimeVersionLessThan(tb, ufe.MinimumVersion, runtimeVersion(tb)) {
+	if !isPlatformVersionLessThan(tb, ufe.MinimumVersion, platformVersion(tb)) {
 		tb.Fatalf("Feature '%s' isn't supported even though kernel is newer than %s",
 			ufe.Name, ufe.MinimumVersion)
 	}
 }
 
-// Deprecated: this function doesn't account for cross-platform differences.
+// Skip a test based on the Linux version we are running on.
+//
+// Warning: this function does not have an effect on platforms other than Linux.
 func SkipOnOldKernel(tb testing.TB, minVersion, feature string) {
 	tb.Helper()
 
-	if runtime.GOOS == "windows" {
+	if !platform.IsLinux {
 		tb.Logf("Ignoring version constraint %s for %s on %s", minVersion, feature, runtime.GOOS)
 		return
 	}
 
-	if IsKernelLessThan(tb, minVersion) {
+	if IsVersionLessThan(tb, minVersion) {
 		tb.Skipf("Test requires at least kernel %s (due to missing %s)", minVersion, feature)
 	}
 }
 
-// Deprecated: this method doesn't account for cross-platform differences.
-func IsKernelLessThan(tb testing.TB, minVersion string) bool {
+// Check whether the current runtime version is less than some minimum.
+func IsVersionLessThan(tb testing.TB, minVersions ...string) bool {
 	tb.Helper()
 
-	if runtime.GOOS == "windows" {
-		tb.Logf("Ignoring version constraint %s on %s", minVersion, runtime.GOOS)
-		return false
+	version, err := platform.SelectVersion(minVersions)
+	qt.Assert(tb, qt.IsNil(err))
+
+	if version == "" {
+		// No matching version means that the platform
+		// doesn't support whatever feature.
+		return true
 	}
 
-	minv, err := internal.NewVersion(minVersion)
+	minv, err := internal.NewVersion(version)
 	if err != nil {
-		tb.Fatalf("Invalid version %s: %s", minVersion, err)
+		tb.Fatalf("Invalid version %s: %s", version, err)
 	}
 
-	return isRuntimeVersionLessThan(tb, minv, runtimeVersion(tb))
+	return isPlatformVersionLessThan(tb, minv, platformVersion(tb))
 }
 
-func isRuntimeVersionLessThan(tb testing.TB, minv, runv internal.Version) bool {
+func isPlatformVersionLessThan(tb testing.TB, minv, runv internal.Version) bool {
 	tb.Helper()
 
-	if max := os.Getenv("CI_MAX_RUNTIME_VERSION"); max != "" {
+	key := "CI_MAX_KERNEL_VERSION"
+	if platform.IsWindows {
+		key = "CI_MAX_EFW_VERSION"
+	}
+
+	if max := os.Getenv(key); max != "" {
 		maxv, err := internal.NewVersion(max)
 		if err != nil {
-			tb.Fatalf("Invalid version %q in CI_MAX_RUNTIME_VERSION: %s", max, err)
+			tb.Fatalf("Invalid version %q in %s: %s", max, key, err)
 		}
 
 		if maxv.Less(minv) {

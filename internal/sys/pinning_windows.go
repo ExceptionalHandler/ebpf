@@ -24,7 +24,6 @@ func Pin(currentPath, newPath string, fd *FD) error {
 		})
 	}
 
-	// TODO(windows): This should not allow replacing an existing object.
 	return ObjPin(&ObjPinAttr{
 		Pathname: NewStringPointer(newPath),
 		BpfFd:    fd.Uint(),

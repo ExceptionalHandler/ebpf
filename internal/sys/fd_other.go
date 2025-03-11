@@ -6,7 +6,7 @@ import (
 	"fmt"
 	"os"
 
-	"golang.org/x/sys/unix"
+	"github.com/cilium/ebpf/internal/unix"
 )
 
 type FD struct {
@@ -38,7 +38,7 @@ func (fd *FD) Close() error {
 		return nil
 	}
 
-	return unix.Close(fd.disown())
+	return unix.Close(fd.Disown())
 }
 
 func (fd *FD) Dup() (*FD, error) {
@@ -60,11 +60,11 @@ func (fd *FD) Dup() (*FD, error) {
 //
 // You must not use the FD after the call returns.
 //
-// Returns nil if the FD is not valid.
-func (fd *FD) File(name string) *os.File {
+// Returns [ErrClosedFd] if the fd is not valid.
+func (fd *FD) File(name string) (*os.File, error) {
 	if fd.raw == invalidFd {
-		return nil
+		return nil, ErrClosedFd
 	}
 
-	return os.NewFile(uintptr(fd.disown()), name)
+	return os.NewFile(uintptr(fd.Disown()), name), nil
 }

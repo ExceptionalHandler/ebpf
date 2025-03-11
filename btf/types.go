@@ -740,10 +740,9 @@ func copyType(typ Type, ids map[Type]TypeID, copies map[Type]Type, copiedIDs map
 		copiedIDs[cpy] = id
 	}
 
-	children(cpy, func(child *Type) bool {
+	for child := range children(cpy) {
 		*child = copyType(*child, ids, copies, copiedIDs)
-		return true
-	})
+	}
 
 	return cpy
 }
@@ -1284,6 +1283,20 @@ func UnderlyingType(typ Type) Type {
 			result = v.qualify()
 		case *Typedef:
 			result = v.Type
+		default:
+			return result
+		}
+	}
+	return &cycle{typ}
+}
+
+// QualifiedType returns the type with all qualifiers removed.
+func QualifiedType(typ Type) Type {
+	result := typ
+	for depth := 0; depth <= maxResolveDepth; depth++ {
+		switch v := (result).(type) {
+		case qualifier:
+			result = v.qualify()
 		default:
 			return result
 		}

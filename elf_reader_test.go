@@ -16,6 +16,7 @@ import (
 	"github.com/cilium/ebpf/btf"
 	"github.com/cilium/ebpf/internal"
 	"github.com/cilium/ebpf/internal/kallsyms"
+	"github.com/cilium/ebpf/internal/platform"
 	"github.com/cilium/ebpf/internal/sys"
 	"github.com/cilium/ebpf/internal/testutils"
 
@@ -24,6 +25,27 @@ import (
 
 	"github.com/go-quicktest/qt"
 )
+
+var csCmpOpts = cmp.Options{
+	// Dummy Comparer that works with empty readers to support test cases.
+	cmp.Comparer(func(a, b bytes.Reader) bool {
+		if a.Len() == 0 && b.Len() == 0 {
+			return true
+		}
+		return false
+	}),
+	cmp.Comparer(func(a, b *VariableSpec) bool {
+		if a.name != b.name || a.offset != b.offset || a.size != b.size {
+			return false
+		}
+		return true
+	}),
+	cmpopts.IgnoreTypes(btf.Spec{}),
+	cmpopts.IgnoreFields(CollectionSpec{}, "ByteOrder", "Types"),
+	cmpopts.IgnoreFields(ProgramSpec{}, "Instructions", "ByteOrder"),
+	cmpopts.IgnoreFields(MapSpec{}, "Key", "Value", "Contents"),
+	cmpopts.IgnoreUnexported(ProgramSpec{}),
+}
 
 func TestLoadCollectionSpec(t *testing.T) {
 	coll := &CollectionSpec{
@@ -101,7 +123,7 @@ func TestLoadCollectionSpec(t *testing.T) {
 				Name:       SanitizeName(".bss", -1),
 				Type:       Array,
 				KeySize:    4,
-				ValueSize:  8,
+				ValueSize:  4,
 				MaxEntries: 1,
 			},
 			".data": {
@@ -116,20 +138,6 @@ func TestLoadCollectionSpec(t *testing.T) {
 				Type:       Array,
 				KeySize:    4,
 				ValueSize:  4,
-				MaxEntries: 1,
-			},
-			".data.weak": {
-				Name:       SanitizeName(".data.weak", -1),
-				Type:       Array,
-				KeySize:    4,
-				ValueSize:  4,
-				MaxEntries: 1,
-			},
-			".data.struct": {
-				Name:       SanitizeName(".data.struct", -1),
-				Type:       Array,
-				KeySize:    4,
-				ValueSize:  16,
 				MaxEntries: 1,
 			},
 			".rodata": {
@@ -200,47 +208,18 @@ func TestLoadCollectionSpec(t *testing.T) {
 				SectionName: "socket/4",
 				License:     "MIT",
 			},
-			"set_vars": {
-				Name:        "set_vars",
-				Type:        SocketFilter,
-				SectionName: "socket",
-				License:     "MIT",
-			},
 		},
 		Variables: map[string]*VariableSpec{
-			"arg":        {name: "arg", offset: 4, size: 4},
-			"arg2":       {name: "arg2", offset: 0, size: 4},
-			"arg3":       {name: "arg3", offset: 0, size: 4},
-			"key1":       {name: "key1", offset: 0, size: 4},
-			"key2":       {name: "key2", offset: 0, size: 4},
-			"key3":       {name: "key3", offset: 0, size: 4},
-			"neg":        {name: "neg", offset: 12, size: 4},
-			"struct_var": {name: "struct_var", offset: 0, size: 16},
-			"uneg":       {name: "uneg", offset: 8, size: 4},
-			"weak":       {name: "weak", offset: 0, size: 4},
+			"arg":  {name: "arg", offset: 4, size: 4},
+			"arg2": {name: "arg2", offset: 0, size: 4},
+			"arg3": {name: "arg3", offset: 0, size: 4},
+			"key1": {name: "key1", offset: 0, size: 4},
+			"key2": {name: "key2", offset: 0, size: 4},
+			"key3": {name: "key3", offset: 0, size: 4},
+			"neg":  {name: "neg", offset: 12, size: 4},
+			"uneg": {name: "uneg", offset: 8, size: 4},
 		},
 		Platform: Linux,
-	}
-
-	cmpOpts := cmp.Options{
-		// Dummy Comparer that works with empty readers to support test cases.
-		cmp.Comparer(func(a, b bytes.Reader) bool {
-			if a.Len() == 0 && b.Len() == 0 {
-				return true
-			}
-			return false
-		}),
-		cmp.Comparer(func(a, b *VariableSpec) bool {
-			if a.name != b.name || a.offset != b.offset || a.size != b.size {
-				return false
-			}
-			return true
-		}),
-		cmpopts.IgnoreTypes(new(btf.Spec)),
-		cmpopts.IgnoreFields(CollectionSpec{}, "ByteOrder", "Types"),
-		cmpopts.IgnoreFields(ProgramSpec{}, "Instructions", "ByteOrder"),
-		cmpopts.IgnoreFields(MapSpec{}, "Key", "Value", "Contents"),
-		cmpopts.IgnoreUnexported(ProgramSpec{}),
 	}
 
 	testutils.Files(t, testutils.Glob(t, "testdata/loader-*.elf"), func(t *testing.T, file string) {
@@ -271,16 +250,17 @@ func TestLoadCollectionSpec(t *testing.T) {
 		}
 		qt.Assert(t, qt.ContentEquals(mErr.Constants, []string{"totallyBogus", "totallyBogus2"}))
 
-		if diff := cmp.Diff(coll, have, cmpOpts...); diff != "" {
-			t.Errorf("MapSpec mismatch (-want +got):\n%s", diff)
-		}
+		qt.Assert(t, qt.Equals(have.Maps["perf_event_array"].ValueSize, 0))
+		qt.Assert(t, qt.IsNotNil(have.Maps["perf_event_array"].Value))
+
+		qt.Assert(t, qt.CmpEquals(have, coll, csCmpOpts))
 
 		if have.ByteOrder != internal.NativeEndian {
 			return
 		}
 
 		have.Maps["array_of_hash_map"].InnerMap = have.Maps["hash_map"]
-		coll, err := NewCollectionWithOptions(have, CollectionOptions{
+		coll, err := newCollection(t, have, &CollectionOptions{
 			Maps: MapOptions{
 				PinPath: testutils.TempBPFFS(t),
 			},
@@ -293,7 +273,6 @@ func TestLoadCollectionSpec(t *testing.T) {
 		if err != nil {
 			t.Fatal(err)
 		}
-		defer coll.Close()
 
 		ret, _, err := coll.Programs["xdp_prog"].Test(internal.EmptyBPFContext)
 		if err != nil {
@@ -327,11 +306,7 @@ func TestDataSections(t *testing.T) {
 		Program *Program `ebpf:"data_sections"`
 	}
 
-	err = coll.LoadAndAssign(&obj, nil)
-	testutils.SkipIfNotSupported(t, err)
-	if err != nil {
-		t.Fatal(err)
-	}
+	mustLoadAndAssign(t, coll, &obj, nil)
 	defer obj.Program.Close()
 
 	ret, _, err := obj.Program.Test(internal.EmptyBPFContext)
@@ -365,11 +340,7 @@ func TestInlineASMConstant(t *testing.T) {
 		Program *Program `ebpf:"asm_relocation"`
 	}
 
-	err = coll.LoadAndAssign(&obj, nil)
-	testutils.SkipIfNotSupported(t, err)
-	if err != nil {
-		t.Fatal(err)
-	}
+	mustLoadAndAssign(t, coll, &obj, nil)
 	obj.Program.Close()
 }
 
@@ -392,12 +363,8 @@ func TestFreezeRodata(t *testing.T) {
 		t.Fatal(err)
 	}
 
-	err = spec.LoadAndAssign(&obj, nil)
-	testutils.SkipIfNotSupported(t, err)
-	if err != nil {
-		t.Fatal(err)
-	}
-	defer obj.Program.Close()
+	mustLoadAndAssign(t, spec, &obj, nil)
+	obj.Program.Close()
 }
 
 func TestCollectionSpecDetach(t *testing.T) {
@@ -473,12 +440,11 @@ func TestLoadInitializedBTFMap(t *testing.T) {
 				t.Skip("Windows made a mess of MapType")
 			}
 
-			tmp, err := NewCollection(coll)
+			_, err := newCollection(t, coll, nil)
 			testutils.SkipIfNotSupported(t, err)
 			if err != nil {
 				t.Fatal("NewCollection failed:", err)
 			}
-			tmp.Close()
 		})
 
 		t.Run("prog_array", func(t *testing.T) {
@@ -580,12 +546,11 @@ func TestStringSection(t *testing.T) {
 		t.Fatal("Read only data maps should have the prog-read-only flag set")
 	}
 
-	coll, err := NewCollection(spec)
+	coll, err := newCollection(t, spec, nil)
 	testutils.SkipIfNotSupported(t, err)
 	if err != nil {
 		t.Fatalf("new collection: %s", err)
 	}
-	defer coll.Close()
 
 	prog := coll.Programs["filter"]
 	if prog == nil {
@@ -647,14 +612,18 @@ func TestTailCall(t *testing.T) {
 	var obj struct {
 		TailMain  *Program `ebpf:"tail_main"`
 		ProgArray *Map     `ebpf:"prog_array_init"`
+		// Windows evicts programs from the tail call array when the last
+		// user space reference is closed. This is not the case on Linux.
+		Tail *Program `ebpf:"tail_1"`
 	}
 
-	err = spec.LoadAndAssign(&obj, nil)
+	err = loadAndAssign(t, spec, &obj, nil)
 	testutils.SkipIfNotSupported(t, err)
 	if err != nil {
 		t.Fatal(err)
 	}
 	defer obj.TailMain.Close()
+	defer obj.Tail.Close()
 	defer obj.ProgArray.Close()
 
 	ret, _, err := obj.TailMain.Test(internal.EmptyBPFContext)
@@ -669,7 +638,7 @@ func TestTailCall(t *testing.T) {
 	}
 }
 
-func TestKconfigSyscallWrapper(t *testing.T) {
+func TestKconfig(t *testing.T) {
 	file := testutils.NativeFile(t, "testdata/kconfig-%s.elf")
 	spec, err := LoadCollectionSpec(file)
 	if err != nil {
@@ -677,7 +646,7 @@ func TestKconfigSyscallWrapper(t *testing.T) {
 	}
 
 	var obj struct {
-		Main *Program `ebpf:"syscall_wrapper"`
+		Main *Program `ebpf:"kconfig"`
 	}
 
 	err = spec.LoadAndAssign(&obj, nil)
@@ -693,52 +662,7 @@ func TestKconfigSyscallWrapper(t *testing.T) {
 		t.Fatal(err)
 	}
 
-	var expected uint32
-	if testutils.IsKernelLessThan(t, "4.17") {
-		expected = 0
-	} else {
-		expected = 1
-	}
-
-	if ret != expected {
-		t.Fatalf("Expected eBPF to return value %d, got %d", expected, ret)
-	}
-}
-
-func TestKconfigConfig(t *testing.T) {
-	file := testutils.NativeFile(t, "testdata/kconfig_config-%s.elf")
-	spec, err := LoadCollectionSpec(file)
-	if err != nil {
-		t.Fatal(err)
-	}
-
-	var obj struct {
-		Main     *Program `ebpf:"kconfig"`
-		ArrayMap *Map     `ebpf:"array_map"`
-	}
-
-	err = spec.LoadAndAssign(&obj, nil)
-	testutils.SkipIfNotSupported(t, err)
-	if err != nil {
-		t.Fatal(err)
-	}
-	defer obj.Main.Close()
-	defer obj.ArrayMap.Close()
-
-	_, _, err = obj.Main.Test(internal.EmptyBPFContext)
-	testutils.SkipIfNotSupported(t, err)
-	if err != nil {
-		t.Fatal(err)
-	}
-
-	var value uint64
-	err = obj.ArrayMap.Lookup(uint32(0), &value)
-	if err != nil {
-		t.Fatal(err)
-	}
-
-	// CONFIG_HZ must have a value.
-	qt.Assert(t, qt.Not(qt.Equals(value, 0)))
+	qt.Assert(t, qt.Equals(ret, 0), qt.Commentf("Failed assertion at line %d in testdata/kconfig.c", ret))
 }
 
 func TestKsym(t *testing.T) {
@@ -852,10 +776,7 @@ func TestWeakKfunc(t *testing.T) {
 
 func TestInvalidKfunc(t *testing.T) {
 	testutils.SkipOnOldKernel(t, "5.18", "kfunc support")
-
-	if !haveTestmod(t) {
-		t.Skip("bpf_testmod not loaded")
-	}
+	requireTestmod(t)
 
 	file := testutils.NativeFile(t, "testdata/invalid-kfunc-%s.elf")
 	coll, err := LoadCollection(file)
@@ -872,10 +793,7 @@ func TestInvalidKfunc(t *testing.T) {
 
 func TestKfuncKmod(t *testing.T) {
 	testutils.SkipOnOldKernel(t, "5.18", "Kernel module function calls")
-
-	if !haveTestmod(t) {
-		t.Skip("bpf_testmod not loaded")
-	}
+	requireTestmod(t)
 
 	file := testutils.NativeFile(t, "testdata/kfunc-kmod-%s.elf")
 	spec, err := LoadCollectionSpec(file)
@@ -919,7 +837,7 @@ func TestSubprogRelocation(t *testing.T) {
 		HashMap *Map     `ebpf:"hash_map"`
 	}
 
-	err = spec.LoadAndAssign(&obj, nil)
+	err = loadAndAssign(t, spec, &obj, nil)
 	testutils.SkipIfNotSupported(t, err)
 	if err != nil {
 		t.Fatal(err)
@@ -954,12 +872,10 @@ func TestUnassignedProgArray(t *testing.T) {
 		// ProgArray *Map     `ebpf:"prog_array_init"`
 	}
 
-	err = spec.LoadAndAssign(&obj, nil)
+	err = loadAndAssign(t, spec, &obj, nil)
 	testutils.SkipIfNotSupported(t, err)
-	if err == nil {
-		obj.TailMain.Close()
-		t.Fatal("Expecting LoadAndAssign to return error")
-	}
+	defer obj.TailMain.Close()
+	qt.Assert(t, qt.IsNotNil(err))
 }
 
 func TestIPRoute2Compat(t *testing.T) {
@@ -1449,15 +1365,15 @@ func TestWindowsELFCompat(t *testing.T) {
 
 		for name, m := range coll.Maps {
 			qt.Check(t, qt.Not(qt.Equals(m.Type, UnspecifiedMap)))
-			p, _ := m.Type.Decode()
-			qt.Check(t, qt.Equals(p, Windows), qt.Commentf("map %s has non-Windows type", name))
+			p, _ := platform.DecodeConstant(m.Type)
+			qt.Check(t, qt.Equals(p, platform.Windows), qt.Commentf("map %s has non-Windows type", name))
 		}
 
 		for name, p := range coll.Programs {
 			t.Log(name, p.Type, p.SectionName)
 			qt.Check(t, qt.Not(qt.Equals(p.Type, UnspecifiedProgram)))
-			p, _ := p.Type.Decode()
-			qt.Assert(t, qt.Equals(p, Windows), qt.Commentf("program %s has non-Windows type", name))
+			p, _ := platform.DecodeConstant(p.Type)
+			qt.Assert(t, qt.Equals(p, platform.Windows), qt.Commentf("program %s has non-Windows type", name))
 		}
 	})
 }

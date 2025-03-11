@@ -128,8 +128,6 @@ func TestLD64IMMReloc(t *testing.T) {
 }
 
 func TestCOREPoisonLineInfo(t *testing.T) {
-	testutils.SkipOnOldKernel(t, "5.0", "program ext_infos")
-
 	spec, err := ebpf.LoadCollectionSpec(testutils.NativeFile(t, "../testdata/errors-%s.elf"))
 	qt.Assert(t, qt.IsNil(err))
 

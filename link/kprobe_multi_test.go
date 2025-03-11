@@ -7,6 +7,8 @@ import (
 	"os"
 	"testing"
 
+	"github.com/go-quicktest/qt"
+
 	"github.com/cilium/ebpf"
 	"github.com/cilium/ebpf/internal/errno"
 	"github.com/cilium/ebpf/internal/testutils"
@@ -71,10 +73,11 @@ func TestKprobeMultiErrors(t *testing.T) {
 
 	// Only have a negative test for addresses as it would be hard to maintain a
 	// proper one.
-	if _, err := KprobeMulti(prog, KprobeMultiOptions{
+	_, err = KprobeMulti(prog, KprobeMultiOptions{
 		Addresses: []uintptr{^uintptr(0)},
-	}); !errors.Is(err, errno.EINVAL) {
-		t.Fatalf("expected EINVAL, got: %s", err)
+	})
+	if !errors.Is(err, os.ErrNotExist) && !errors.Is(err, unix.EINVAL) {
+		t.Fatalf("expected ErrNotExist or EINVAL, got: %s", err)
 	}
 }
 
@@ -136,4 +139,21 @@ func TestKprobeMultiProgramCall(t *testing.T) {
 
 func TestHaveBPFLinkKprobeMulti(t *testing.T) {
 	testutils.CheckFeatureTest(t, haveBPFLinkKprobeMulti)
+}
+
+func TestKprobeSession(t *testing.T) {
+	testutils.SkipIfNotSupported(t, haveBPFLinkKprobeMulti())
+
+	prog := mustLoadProgram(t, ebpf.Kprobe, ebpf.AttachTraceKprobeSession, "")
+
+	km, err := KprobeMulti(prog, KprobeMultiOptions{Symbols: kprobeMultiSyms, Session: true})
+	testutils.SkipIfNotSupported(t, err)
+	qt.Assert(t, qt.IsNil(err))
+	defer km.Close()
+
+	testLink(t, km, prog)
+}
+
+func TestHaveBPFLinkKprobeSession(t *testing.T) {
+	testutils.CheckFeatureTest(t, haveBPFLinkKprobeSession)
 }

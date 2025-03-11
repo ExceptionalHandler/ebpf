@@ -4,6 +4,7 @@ import (
 	"fmt"
 	"os"
 
+	"github.com/cilium/ebpf/internal"
 	"github.com/cilium/ebpf/internal/efw"
 )
 
@@ -23,8 +24,7 @@ func NewFD(value int) (*FD, error) {
 	}
 
 	if value == 0 {
-		// The bpf() syscall API can't deal with zero fds but we can't dup because
-		// the handle is managed by efW.
+		// The efW runtime never uses zero fd it seems. No need to dup it.
 		return nil, fmt.Errorf("invalid zero fd")
 	}
 
@@ -36,7 +36,7 @@ func (fd *FD) Close() error {
 		return nil
 	}
 
-	return efw.EbpfCloseFd(fd.disown())
+	return efw.EbpfCloseFd(fd.Disown())
 }
 
 func (fd *FD) Dup() (*FD, error) {
@@ -44,7 +44,7 @@ func (fd *FD) Dup() (*FD, error) {
 		return nil, ErrClosedFd
 	}
 
-	dup, err := efw.EbpfDupFd(fd.raw)
+	dup, err := efw.EbpfDuplicateFd(fd.raw)
 	if err != nil {
 		return nil, err
 	}
@@ -52,7 +52,7 @@ func (fd *FD) Dup() (*FD, error) {
 	return NewFD(int(dup))
 }
 
-// File panics on Windows.
-func (fd *FD) File(name string) *os.File {
-	panic("FD.File is not implementable on Windows")
+// File is not implemented.
+func (fd *FD) File(name string) (*os.File, error) {
+	return nil, fmt.Errorf("file from fd: %w", internal.ErrNotSupportedOnOS)
 }
