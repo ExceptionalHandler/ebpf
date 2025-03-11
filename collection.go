@@ -6,7 +6,6 @@ import (
 	"fmt"
 	"path/filepath"
 	"reflect"
-	"runtime"
 	"strings"
 
 	"github.com/cilium/ebpf/asm"

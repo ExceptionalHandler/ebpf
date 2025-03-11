@@ -2,9 +2,7 @@ package kallsyms
 
 import (
 	"bytes"
-	"errors"
 	"os"
-	"runtime"
 	"testing"
 
 	"github.com/go-quicktest/qt"

@@ -10,7 +10,6 @@ import (
 	"io"
 	"math"
 	"os"
-	"runtime"
 	"strings"
 
 	"github.com/cilium/ebpf/asm"
@@ -208,6 +207,7 @@ func LoadCollectionSpecFromReader(rd io.ReaderAt) (*CollectionSpec, error) {
 		ec.vars,
 		btfSpec,
 		ec.ByteOrder,
+		Linux,
 	}, nil
 }
 
