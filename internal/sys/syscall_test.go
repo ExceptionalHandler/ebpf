@@ -46,9 +46,9 @@ func TestObjName(t *testing.T) {
 
 func TestSyscallError(t *testing.T) {
 	err := errors.New("foo")
-	foo := Error(err, errno.EINVAL)
+	foo := Error(err, unix.EINVAL)
 
-	if !errors.Is(foo, errno.EINVAL) {
+	if !errors.Is(foo, unix.EINVAL) {
 		t.Error("SyscallError is not the wrapped errno")
 	}
 
@@ -56,7 +56,7 @@ func TestSyscallError(t *testing.T) {
 		t.Error("SyscallError is not the wrapped error")
 	}
 
-	if errors.Is(errno.EINVAL, foo) {
+	if errors.Is(unix.EINVAL, foo) {
 		t.Error("Errno is the SyscallError")
 	}
 

@@ -2,6 +2,8 @@ package sys
 
 import (
 	"unsafe"
+
+	"github.com/cilium/ebpf/internal/unix"
 )
 
 // UnsafePointer creates a 64-bit pointer from an unsafe Pointer.

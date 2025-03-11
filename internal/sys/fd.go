@@ -9,7 +9,7 @@ import (
 	"github.com/cilium/ebpf/internal/unix"
 )
 
-var ErrClosedFd = errno.EBADF
+var ErrClosedFd = unix.EBADF
 
 // A value for an invalid fd.
 //
