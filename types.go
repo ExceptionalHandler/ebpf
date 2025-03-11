@@ -7,14 +7,6 @@ import (
 
 //go:generate go run golang.org/x/tools/cmd/stringer@latest -output types_string.go -type=MapType,ProgramType,PinType
 
-type Platform = internal.Platform
-
-const (
-	UnspecifiedPlatform = internal.UnspecifiedPlatform
-	Linux               = internal.Linux
-	Windows             = internal.Windows
-)
-
 // MapType indicates the type map structure
 // that will be initialized in the kernel.
 type MapType uint32
