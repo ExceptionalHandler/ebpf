@@ -67,7 +67,7 @@ func TestRawLinkLoadPinnedWithOptions(t *testing.T) {
 	_, err := loadPinnedRawLink(path, &ebpf.LoadPinOptions{
 		Flags: math.MaxUint32,
 	})
-	if !errors.Is(err, errno.EINVAL) {
+	if !errors.Is(err, unix.EINVAL) {
 		t.Fatal("Invalid flags don't trigger an error:", err)
 	}
 }
@@ -149,7 +149,7 @@ func testLink(t *testing.T, link Link, prog *ebpf.Program) {
 		_, err = LoadPinnedLink(path, &ebpf.LoadPinOptions{
 			Flags: math.MaxUint32,
 		})
-		if !errors.Is(err, errno.EINVAL) {
+		if !errors.Is(err, unix.EINVAL) {
 			t.Errorf("Loading a pinned %T doesn't respect flags", link)
 		}
 	})
@@ -178,6 +178,8 @@ func testLink(t *testing.T, link Link, prog *ebpf.Program) {
 	type FDer interface {
 		FD() int
 	}
+
+	t.Run("from fd", func(t *testing.T) {
 		fder, ok := link.(FDer)
 		if !ok {
 			t.Skip("Link doesn't allow retrieving FD")
@@ -203,6 +205,7 @@ func testLink(t *testing.T, link Link, prog *ebpf.Program) {
 		t.Fatalf("%T.Close returns an error: %s", link, err)
 	}
 }
+
 func TestLoadWrongPin(t *testing.T) {
 	l, p := newRawLink(t)
 
