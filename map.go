@@ -175,11 +175,6 @@ func (spec *MapSpec) fixupMagicFields() (*MapSpec, error) {
 		}
 	}
 
-	if p, _ := spec.Type.Decode(); runtime.GOOS == "windows" && p == Linux {
-		spec = spec.Copy()
-		spec.Type = fixupWindowsMapTypes(spec.Type)
-	}
-
 	return spec, nil
 }
 

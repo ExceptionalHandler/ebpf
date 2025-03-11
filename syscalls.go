@@ -15,15 +15,16 @@ import (
 	"github.com/cilium/ebpf/internal/platform"
 	"github.com/cilium/ebpf/internal/sys"
 	"github.com/cilium/ebpf/internal/tracefs"
+	"github.com/cilium/ebpf/internal/unix"
 )
 
 var (
 	// pre-allocating these here since they may
 	// get called in hot code paths and cause
 	// unnecessary memory allocations
-	sysErrKeyNotExist  = sys.Error(ErrKeyNotExist, errno.ENOENT)
-	sysErrKeyExist     = sys.Error(ErrKeyExist, errno.EEXIST)
-	sysErrNotSupported = sys.Error(ErrNotSupported, errno.ENOTSUPP)
+	sysErrKeyNotExist  = sys.Error(ErrKeyNotExist, unix.ENOENT)
+	sysErrKeyExist     = sys.Error(ErrKeyExist, unix.EEXIST)
+	sysErrNotSupported = sys.Error(ErrNotSupported, unix.ENOTSUPP)
 )
 
 // invalidBPFObjNameChar returns true if char may not appear in
