@@ -207,6 +207,7 @@ func LoadCollectionSpecFromReader(rd io.ReaderAt) (*CollectionSpec, error) {
 		ec.vars,
 		btfSpec,
 		ec.ByteOrder,
+		Linux,
 	}, nil
 }
 
