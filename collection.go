@@ -54,9 +54,6 @@ type CollectionSpec struct {
 	// ByteOrder specifies whether the ELF was compiled for
 	// big-endian or little-endian architectures.
 	ByteOrder binary.ByteOrder
-
-	// Platform indicates which platform the ELF was compiled for.
-	Platform Platform
 }
 
 // Copy returns a recursive copy of the spec.
