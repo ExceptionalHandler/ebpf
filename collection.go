@@ -68,7 +68,6 @@ func (cs *CollectionSpec) Copy() *CollectionSpec {
 		Variables: make(map[string]*VariableSpec, len(cs.Variables)),
 		ByteOrder: cs.ByteOrder,
 		Types:     cs.Types.Copy(),
-		Platform:  cs.Platform,
 	}
 
 	for name, spec := range cs.Maps {
@@ -424,10 +423,6 @@ type collectionLoader struct {
 }
 
 func newCollectionLoader(coll *CollectionSpec, opts *CollectionOptions) (*collectionLoader, error) {
-	if coll.Platform != UnspecifiedPlatform && coll.Platform != internal.NativePlatform {
-		return nil, fmt.Errorf("collection for platform %s: %w", coll.Platform, internal.ErrNotSupportedOnOS)
-	}
-
 	if opts == nil {
 		opts = &CollectionOptions{}
 	}
