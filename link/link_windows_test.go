@@ -1,6 +1,7 @@
 package link
 
 import (
+	"errors"
 	"os/exec"
 	"testing"
 
@@ -9,6 +10,7 @@ import (
 
 	"github.com/cilium/ebpf"
 	"github.com/cilium/ebpf/asm"
+	"github.com/cilium/ebpf/internal/unix"
 )
 
 // ntosebpfext has not yet assigned a stable enum value so we can't refer to
@@ -56,7 +58,7 @@ func TestProcessLink(t *testing.T) {
 	defer array.Close()
 
 	prog, err := ebpf.NewProgram(&ebpf.ProgramSpec{
-		Type: windowsProgramTypeForGUID(t, programTypeProcessGUID),
+		Type: windowsProgramTypeFromGUID(t, programTypeProcessGUID),
 		Name: "process_test",
 		Instructions: asm.Instructions{
 			// R1 = map
@@ -78,12 +80,15 @@ func TestProcessLink(t *testing.T) {
 		},
 		License: "MIT",
 	})
+	if errors.Is(err, unix.EINVAL) {
+		t.Logf("Got %s: check that ntosebpfext is installed", err)
+	}
 	qt.Assert(t, qt.IsNil(err))
 	defer prog.Close()
 
 	link, err := AttachRawLink(RawLinkOptions{
 		Program: prog,
-		Attach:  windowsAttachTypeForGUID(t, attachTypeProcessGUID),
+		Attach:  windowsAttachTypeFromGUID(t, attachTypeProcessGUID),
 	})
 	qt.Assert(t, qt.IsNil(err))
 	defer link.Close()
