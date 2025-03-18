@@ -150,8 +150,11 @@ func TestNativeExecGood(t *testing.T) {
 		var imageFile [1024]byte
 		var procInfo *efw.ProcessInfo
 		procInfo, err := reader.GetNextProcess()
-		if err != nil {
+		if (err == efw.ERR_RINGBUF_OFFSET_MISMATCH) || (err == efw.ERR_RINGBUF_UNKNOWN_ERROR) {
 			break
+		}
+		if (err == efw.ERR_RINGBUF_TRY_AGAIN) || (err == efw.ERR_RINGBUF_RECORD_DISCARDED) {
+			continue
 		}
 		if procInfo.Operation == 0 {
 			t.Log("pid = ", procInfo.ProcessId)
@@ -159,9 +162,9 @@ func TestNativeExecGood(t *testing.T) {
 			// pathStr := windows.UTF16ToString(cmdline[:])
 			// t.Log("cmdLine = ", pathStr)
 
-			err = processMap.Lookup(procInfo.ProcessId, &imageFile)
-			if err != nil {
-				t.Log("error  = ", err.Error())
+			mapErr := processMap.Lookup(procInfo.ProcessId, &imageFile)
+			if mapErr != nil {
+				t.Log("error  = ", mapErr.Error())
 			}
 			var s *uint16
 			s = (*uint16)(unsafe.Pointer(&imageFile[0]))
@@ -176,6 +179,7 @@ func TestNativeExecGood(t *testing.T) {
 
 func TestNativeExecBad(t *testing.T) {
 
+	windows.MessageBox(0, windows.StringToUTF16Ptr("OK"), windows.StringToUTF16Ptr("ok"), windows.MB_OK)
 	coll, err := ebpf.LoadCollection("C:\\git\\ntosebpfext\\x64\\Debug\\process_monitor_km\\process_monitor.sys")
 	qt.Assert(t, qt.IsNil(err))
 	defer coll.Close()
@@ -203,7 +207,7 @@ func TestNativeExecBad(t *testing.T) {
 }
 
 func TestPreLoadedMaps(t *testing.T) {
-	windows.MessageBox(0, windows.StringToUTF16Ptr("OK"), windows.StringToUTF16Ptr("ok"), windows.MB_OK)
+	//windows.MessageBox(0, windows.StringToUTF16Ptr("OK"), windows.StringToUTF16Ptr("ok"), windows.MB_OK)
 	runtime.LockOSThread()
 	pinOpts := ebpf.LoadPinOptions{}
 	ringBufMap, err := ebpf.LoadPinnedMap("process::process_ringbuf", &pinOpts)
@@ -220,9 +224,11 @@ func TestPreLoadedMaps(t *testing.T) {
 		var path [1024]uint16
 		var procInfo *efw.ProcessInfo
 		procInfo, err := reader.GetNextProcess()
-		if err != nil {
-			t.Log(err.Error())
+		if (err == efw.ERR_RINGBUF_OFFSET_MISMATCH) || (err == efw.ERR_RINGBUF_UNKNOWN_ERROR) {
 			break
+		}
+		if (err == efw.ERR_RINGBUF_TRY_AGAIN) || (err == efw.ERR_RINGBUF_RECORD_DISCARDED) {
+			continue
 		}
 		if procInfo.Operation == 0 {
 			t.Log("pid = ", procInfo.ProcessId)
