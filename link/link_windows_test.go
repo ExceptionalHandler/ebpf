@@ -130,7 +130,7 @@ func TestNativeExecGood(t *testing.T) {
 
 	link, err := AttachRawLink(RawLinkOptions{
 		Program: coll.Programs["ProcessMonitor"],
-		Attach:  windowsAttachTypeFromGUID(t, attachTypeProcessGUID),
+		Attach:  windowsAttachTypeForGUID(t, attachTypeProcessGUID),
 	})
 	qt.Assert(t, qt.IsNil(err))
 	defer link.Close()
@@ -195,7 +195,7 @@ func TestNativeExecBad(t *testing.T) {
 
 	_, err = AttachRawLink(RawLinkOptions{
 		Program: coll.Programs["ProcessMonitor"],
-		Attach:  windowsAttachTypeFromGUID(t, attachTypeProcessGUID),
+		Attach:  windowsAttachTypeForGUID(t, attachTypeProcessGUID),
 	})
 	qt.Assert(t, qt.IsNil(err))
 
