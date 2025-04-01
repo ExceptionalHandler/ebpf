@@ -2,13 +2,18 @@ package link
 
 import (
 	"os/exec"
+	"runtime"
+	"strings"
 	"testing"
+	"unsafe"
 
 	"github.com/go-quicktest/qt"
 	"golang.org/x/sys/windows"
 
 	"github.com/cilium/ebpf"
 	"github.com/cilium/ebpf/asm"
+	"github.com/cilium/ebpf/internal/efw"
+	"github.com/cilium/ebpf/internal/sys"
 )
 
 // ntosebpfext has not yet assigned a stable enum value so we can't refer to
@@ -99,4 +104,138 @@ func TestProcessLink(t *testing.T) {
 
 func makeGUID(data1 uint32, data2 uint16, data3 uint16, data4 [8]byte) windows.GUID {
 	return windows.GUID{Data1: data1, Data2: data2, Data3: data3, Data4: data4}
+}
+
+func TestNativeExecGood(t *testing.T) {
+
+	coll, err := ebpf.LoadCollection("C:\\git\\ntosebpfext\\x64\\Debug\\process_monitor_km\\process_monitor.sys")
+	qt.Assert(t, qt.IsNil(err))
+	defer coll.Close()
+
+	for _, m := range coll.Maps {
+		info, err := m.Info()
+		qt.Assert(t, qt.IsNil(err))
+		t.Log("map", info.Name)
+		if strings.Contains(info.Name, "ring") {
+			//ringBufMap = m
+		}
+	}
+
+	link, err := AttachRawLink(RawLinkOptions{
+		Program: coll.Programs["ProcessMonitor"],
+		Attach:  windowsAttachTypeForGUID(t, attachTypeProcessGUID),
+	})
+	qt.Assert(t, qt.IsNil(err))
+	defer link.Close()
+
+	coll.Programs["ProcessMonitor"].Pin("__base__//process")
+
+	ringBufMap := coll.Maps["process_ringbuf"]
+	//commandMap := coll.Maps["command_map"]
+	processMap := coll.Maps["process_map"]
+
+	reader := efw.GetNewWindowsRingBufReader()
+	err = reader.Init(ringBufMap.FD(), int(ringBufMap.MaxEntries()))
+	qt.Assert(t, qt.IsNil(err))
+
+	for {
+		//var cmdline [1024]uint16
+		var imageFile [1024]byte
+		var procInfo *efw.ProcessInfo
+		procInfo, err := reader.GetNextProcess()
+		if (err == efw.ERR_RINGBUF_OFFSET_MISMATCH) || (err == efw.ERR_RINGBUF_UNKNOWN_ERROR) {
+			break
+		}
+		if (err == efw.ERR_RINGBUF_TRY_AGAIN) || (err == efw.ERR_RINGBUF_RECORD_DISCARDED) {
+			continue
+		}
+		if procInfo.Operation == 0 {
+			t.Log("pid = ", procInfo.ProcessId)
+			// commandMap.Lookup(procInfo.ProcessId, &cmdline)
+			// pathStr := windows.UTF16ToString(cmdline[:])
+			// t.Log("cmdLine = ", pathStr)
+
+			mapErr := processMap.Lookup(procInfo.ProcessId, &imageFile)
+			if mapErr != nil {
+				t.Log("error  = ", mapErr.Error())
+			}
+			var s *uint16
+			s = (*uint16)(unsafe.Pointer(&imageFile[0]))
+			imageStr := windows.UTF16PtrToString(s)
+			t.Log("imagePath  = ", imageStr)
+
+		}
+
+	}
+
+}
+
+func TestNativeExecBad(t *testing.T) {
+
+	windows.MessageBox(0, windows.StringToUTF16Ptr("OK"), windows.StringToUTF16Ptr("ok"), windows.MB_OK)
+	coll, err := ebpf.LoadCollection("C:\\git\\ntosebpfext\\x64\\Debug\\process_monitor_km\\process_monitor.sys")
+	qt.Assert(t, qt.IsNil(err))
+	defer coll.Close()
+
+	for _, m := range coll.Maps {
+		info, err := m.Info()
+		qt.Assert(t, qt.IsNil(err))
+		t.Log("map", info.Name)
+		if strings.Contains(info.Name, "ring") {
+			//ringBufMap = m
+		}
+	}
+
+	_, err = AttachRawLink(RawLinkOptions{
+		Program: coll.Programs["ProcessMonitor"],
+		Attach:  windowsAttachTypeForGUID(t, attachTypeProcessGUID),
+	})
+	qt.Assert(t, qt.IsNil(err))
+
+	coll.Programs["ProcessMonitor"].Pin("__base__//process")
+
+	coll.Maps["process_ringbuf"].Pin("process::process_ringbuf")
+	coll.Maps["command_map"].Pin("process::command_map")
+
+}
+
+func TestPreLoadedMaps(t *testing.T) {
+	//windows.MessageBox(0, windows.StringToUTF16Ptr("OK"), windows.StringToUTF16Ptr("ok"), windows.MB_OK)
+	runtime.LockOSThread()
+	pinOpts := ebpf.LoadPinOptions{}
+	ringBufMap, err := ebpf.LoadPinnedMap("process::process_ringbuf", &pinOpts)
+	qt.Assert(t, qt.IsNil(err))
+	pinOpts = ebpf.LoadPinOptions{}
+	commandMap, err := ebpf.LoadPinnedMap("process::command_map", &pinOpts)
+	qt.Assert(t, qt.IsNil(err))
+
+	reader := efw.GetNewWindowsRingBufReader()
+	err = reader.Init(ringBufMap.FD(), int(ringBufMap.MaxEntries()))
+	qt.Assert(t, qt.IsNil(err))
+	//reader.SyncOffsets()
+	for {
+		var path [1024]uint16
+		var procInfo *efw.ProcessInfo
+		procInfo, err := reader.GetNextProcess()
+		if (err == efw.ERR_RINGBUF_OFFSET_MISMATCH) || (err == efw.ERR_RINGBUF_UNKNOWN_ERROR) {
+			break
+		}
+		if (err == efw.ERR_RINGBUF_TRY_AGAIN) || (err == efw.ERR_RINGBUF_RECORD_DISCARDED) {
+			continue
+		}
+		if procInfo.Operation == 0 {
+			t.Log("pid = ", procInfo.ProcessId)
+			commandMap.Lookup(procInfo.ProcessId, &path)
+			pathStr := windows.UTF16ToString(path[:])
+			t.Log("cmdLine = ", pathStr)
+		}
+
+	}
+
+}
+
+func TestUnpin(t *testing.T) {
+	sys.Unpin("process::process_ringbuf")
+	sys.Unpin("process::command_map")
+	sys.Unpin("process::process_map")
 }
