@@ -208,7 +208,7 @@ func TestPreLoadedMaps(t *testing.T) {
 	//windows.MessageBox(0, windows.StringToUTF16Ptr("OK"), windows.StringToUTF16Ptr("ok"), windows.MB_OK)
 	runtime.LockOSThread()
 	pinOpts := ebpf.LoadPinOptions{}
-	ringBufMap, err := ebpf.LoadPinnedMap("process::process_ringbuf", &pinOpts)
+	ringBufMap, err := ebpf.LoadPinnedMap("process_ringbuf", &pinOpts)
 	qt.Assert(t, qt.IsNil(err))
 	pinOpts = ebpf.LoadPinOptions{}
 	commandMap, err := ebpf.LoadPinnedMap("process::command_map", &pinOpts)
@@ -223,6 +223,7 @@ func TestPreLoadedMaps(t *testing.T) {
 		var procInfo *efw.ProcessInfo
 		procInfo, err := reader.GetNextProcess()
 		if (err == efw.ERR_RINGBUF_OFFSET_MISMATCH) || (err == efw.ERR_RINGBUF_UNKNOWN_ERROR) {
+			t.Log("Error  = ", err)
 			break
 		}
 		if (err == efw.ERR_RINGBUF_TRY_AGAIN) || (err == efw.ERR_RINGBUF_RECORD_DISCARDED) {
