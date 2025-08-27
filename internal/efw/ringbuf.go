@@ -83,10 +83,8 @@ type ProcessInfo struct {
 	ParentProcessID   uint32
 	CreatingProcessID uint32
 	CreatingThreadID  uint32
+	UserLUID          uint64
 	CreationTime      uint64
-	ExitTime          uint64
-	ProcessExitCode   uint32
-	Operation         uint8
 }
 
 type GetOsfHandle func(fd int) uint32

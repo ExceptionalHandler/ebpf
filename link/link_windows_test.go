@@ -113,7 +113,7 @@ func makeGUID(data1 uint32, data2 uint16, data3 uint16, data4 [8]byte) windows.G
 
 func TestNativeExecGood(t *testing.T) {
 
-	coll, err := ebpf.LoadCollection("C:\\git\\ntosebpfext\\x64\\Debug\\process_monitor_km\\process_monitor.sys")
+	coll, err := ebpf.LoadCollection("C:\\program files\tetragon\\bpf\\process_monitor.sys")
 	qt.Assert(t, qt.IsNil(err))
 	defer coll.Close()
 
@@ -178,7 +178,7 @@ func TestNativeExecGood(t *testing.T) {
 func TestNativeExecBad(t *testing.T) {
 
 	windows.MessageBox(0, windows.StringToUTF16Ptr("OK"), windows.StringToUTF16Ptr("ok"), windows.MB_OK)
-	coll, err := ebpf.LoadCollection("C:\\git\\ntosebpfext\\x64\\Debug\\process_monitor_km\\process_monitor.sys")
+	coll, err := ebpf.LoadCollection("C:\\program files\tetragon\\bpf\\process_monitor.sys")
 	qt.Assert(t, qt.IsNil(err))
 	defer coll.Close()
 
