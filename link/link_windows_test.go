@@ -1,6 +1,8 @@
 package link
 
 import (
+	"bytes"
+	"encoding/binary"
 	"errors"
 	"os/exec"
 	"runtime"
@@ -16,6 +18,7 @@ import (
 	"github.com/cilium/ebpf/internal/efw"
 	"github.com/cilium/ebpf/internal/sys"
 	"github.com/cilium/ebpf/internal/unix"
+	"github.com/cilium/ebpf/ringbuf"
 )
 
 // ntosebpfext has not yet assigned a stable enum value so we can't refer to
@@ -113,7 +116,7 @@ func makeGUID(data1 uint32, data2 uint16, data3 uint16, data4 [8]byte) windows.G
 
 func TestNativeExecGood(t *testing.T) {
 
-	coll, err := ebpf.LoadCollection("C:\\program files\tetragon\\bpf\\process_monitor.sys")
+	coll, err := ebpf.LoadCollection("C:\\program files\\tetragon\\bpf\\process_monitor.sys")
 	qt.Assert(t, qt.IsNil(err))
 	defer coll.Close()
 
@@ -154,7 +157,7 @@ func TestNativeExecGood(t *testing.T) {
 		if (err == efw.ERR_RINGBUF_TRY_AGAIN) || (err == efw.ERR_RINGBUF_RECORD_DISCARDED) {
 			continue
 		}
-		if procInfo.Operation == 0 {
+		if procInfo.Common.Op == 5 {
 			t.Log("pid = ", procInfo.ProcessId)
 			// commandMap.Lookup(procInfo.ProcessId, &cmdline)
 			// pathStr := windows.UTF16ToString(cmdline[:])
@@ -229,11 +232,72 @@ func TestPreLoadedMaps(t *testing.T) {
 		if (err == efw.ERR_RINGBUF_TRY_AGAIN) || (err == efw.ERR_RINGBUF_RECORD_DISCARDED) {
 			continue
 		}
-		if procInfo.Operation == 0 {
+		if procInfo.Common.Op == 5 {
 			t.Log("pid = ", procInfo.ProcessId)
 			commandMap.Lookup(procInfo.ProcessId, &path)
 			pathStr := windows.UTF16ToString(path[:])
 			t.Log("cmdLine = ", pathStr)
+		}
+
+	}
+
+}
+
+func TestNewReader(t *testing.T) {
+
+	coll, err := ebpf.LoadCollection("C:\\program files\\tetragon\\bpf\\process_monitor.sys")
+	qt.Assert(t, qt.IsNil(err))
+	defer coll.Close()
+
+	for _, m := range coll.Maps {
+		info, err := m.Info()
+		qt.Assert(t, qt.IsNil(err))
+		t.Log("map", info.Name)
+		if strings.Contains(info.Name, "ring") {
+			//ringBufMap = m
+		}
+	}
+
+	link, err := AttachRawLink(RawLinkOptions{
+		Program: coll.Programs["ProcessMonitor"],
+		Attach:  windowsAttachTypeForGUID(t, attachTypeProcessGUID),
+	})
+	qt.Assert(t, qt.IsNil(err))
+	defer link.Close()
+
+	coll.Programs["ProcessMonitor"].Pin("__base__//process")
+
+	ringBufMap := coll.Maps["process_ringbuf"]
+	//commandMap := coll.Maps["command_map"]
+	processMap := coll.Maps["process_map"]
+
+	reader, err := ringbuf.NewReader(ringBufMap)
+	qt.Assert(t, qt.IsNil(err))
+
+	for {
+		//var cmdline [1024]uint16
+		var imageFile [1024]byte
+		event, err := reader.Read()
+		qt.Assert(t, qt.IsNil(err))
+		procInfo := efw.ProcessInfo{}
+		r := bytes.NewReader(event.RawSample)
+		err = binary.Read(r, binary.LittleEndian, &procInfo)
+		qt.Assert(t, qt.IsNil(err))
+		if procInfo.Common.Op == 5 {
+			t.Log("pid = ", procInfo.ProcessId)
+			// commandMap.Lookup(procInfo.ProcessId, &cmdline)
+			// pathStr := windows.UTF16ToString(cmdline[:])
+			// t.Log("cmdLine = ", pathStr)
+
+			mapErr := processMap.Lookup(procInfo.ProcessId, &imageFile)
+			if mapErr != nil {
+				t.Log("error  = ", mapErr.Error())
+			}
+			var s *uint16
+			s = (*uint16)(unsafe.Pointer(&imageFile[0]))
+			imageStr := windows.UTF16PtrToString(s)
+			t.Log("imagePath  = ", imageStr)
+
 		}
 
 	}
